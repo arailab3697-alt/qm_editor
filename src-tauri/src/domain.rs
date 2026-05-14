@@ -775,7 +775,7 @@ fn infer_job_type(text: &str) -> Option<JobType> {
 
     let has_opt = text.contains("opt")
         || text.contains("optimize")
-        || text.contains("optimization")
+        || text.contains("optimization");
     let has_freq = text.contains("freq") || text.contains("frequency");
     match (has_opt, has_freq) {
         (true, true) => Some(JobType::OptFreq),
@@ -820,7 +820,7 @@ fn infer_geometry_command(text: &str, context: &AiContext) -> Option<Command> {
         .map(|atom| atom.id)
         .collect::<Vec<_>>();
 
-    if (text.contains("dihedral") || text.contains("torsion")
+    if (text.contains("dihedral") || text.contains("torsion"))
         && selected.len() >= 4
     {
         return Some(Command::SetDihedralAngle {
@@ -828,7 +828,7 @@ fn infer_geometry_command(text: &str, context: &AiContext) -> Option<Command> {
             angle: value,
         });
     }
-    if (text.contains("bond angle") || text.contains("angle")
+    if (text.contains("bond angle") || text.contains("angle"))
         && selected.len() >= 3
     {
         return Some(Command::SetBondAngle {
@@ -836,7 +836,7 @@ fn infer_geometry_command(text: &str, context: &AiContext) -> Option<Command> {
             angle: value,
         });
     }
-    if (text.contains("bond length") || text.contains("distance")
+    if (text.contains("bond length") || text.contains("distance"))
         && selected.len() >= 2
     {
         return Some(Command::SetBondLength {
