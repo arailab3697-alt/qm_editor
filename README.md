@@ -41,11 +41,30 @@ The application follows a strict **Command-Reducer** pattern to manage state mut
 │   └── main.tsx            # React entry point
 └── src-tauri/              # Backend (Rust)
     └── src/
-        ├── domain.rs       # Core logic: State, Reducer, Parsers, Renderer, Validation
+        ├── domain/         # Core logic: State, Reducer, Parsers, Renderer, Validation
         ├── ai.rs           # AI Provider integration (Gemini/Rig)
+        ├── ai_commands.rs  # AI command processing
         ├── lib.rs          # Tauri command definitions and entry point
-        └── main.rs         # Minimal binary entry
+        ├── main.rs         # Minimal binary entry
+        └── ...             # Utility modules (geometry, gaussian, templates, etc.)
 ```
+
+## 🧠 AI Command Engine
+
+The AI integration relies on a hybrid approach in `src-tauri/src/ai_commands.rs`:
+
+1.  **Rule-based Parser (`propose_commands_by_rules`):** Uses heuristic-based regex and token matching for fast, predictable state mutations (e.g., "set method b3lyp").
+2.  **LLM Integration:** If local parsing fails, the system sends a structured `AiContext` (containing selected atoms and current calculation parameters) to the LLM to generate a sequence of valid `Command` objects.
+
+### Core Domain Structs
+
+The system is defined by a strict set of domain types (shared across Rust and TypeScript):
+
+*   **`AppState`**: The root of the application state, managing the `domain` (chemistry) and `ui` (viewport) state.
+*   **`Command`**: An enum defining all allowed mutations, such as `SetMethod`, `SetBasis`, `SetCharge`, `SetBondLength`, etc.
+*   **`AiContext`**: A summary of the current chemical specification and active selections, provided to the AI for informed decision-making.
+*   **`CalculationSummary`**: Stores parameters like `JobType`, `Method`, `Basis`, `Solvent`, `Charge`, and `Multiplicity`.
+*   **`AtomSummary`**: Represents the state of selected atoms (ID, element, position) used for geometric manipulations.
 
 ## 🔄 Core Workflows
 

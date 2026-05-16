@@ -1,0 +1,14 @@
+{
+  "name": "methyl",
+  "displayName": "Methyl Group",
+  "description": "A CH3 methyl group fragment.",
+  "templateName": "methane",
+  "attachPorts": [
+    {
+      "id": "h1",
+      "portType": "atom",
+      "targetId": 2,
+      "recommendedUsage": "ATTACH"
+    }
+  ]
+}

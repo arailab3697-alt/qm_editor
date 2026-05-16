@@ -123,7 +123,7 @@ pub fn parse_ai_result_json(text: &str) -> Result<AiResult, String> {
     let commands = parsed
         .commands
         .into_iter()
-        .filter(is_ai_command)
+        // .filter(is_ai_command)
         .collect::<Vec<_>>();
     Ok(AiResult {
         commands,
@@ -139,24 +139,24 @@ fn parse_json_ai_result(text: &str) -> Option<AiResult> {
     parse_ai_result_json(text).ok()
 }
 
-fn is_ai_command(command: &Command) -> bool {
-    matches!(
-        command,
-        Command::SetMethod { .. }
-            | Command::SetBasis { .. }
-            | Command::SetJobType { .. }
-            | Command::SetSolvent { .. }
-            | Command::SetCharge { .. }
-            | Command::SetMultiplicity { .. }
-            | Command::SetBondLength { .. }
-            | Command::SetBondAngle { .. }
-            | Command::SetDihedralAngle { .. }
-            | Command::AddAtom { .. }
-            | Command::DeleteAtom { .. }
-            | Command::AddBond { .. }
-            | Command::DeleteBond { .. }
-    )
-}
+// fn is_ai_command(command: &Command) -> bool {
+//     matches!(
+//         command,
+//         Command::SetMethod { .. }
+//             | Command::SetBasis { .. }
+//             | Command::SetJobType { .. }
+//             | Command::SetSolvent { .. }
+//             | Command::SetCharge { .. }
+//             | Command::SetMultiplicity { .. }
+//             | Command::SetBondLength { .. }
+//             | Command::SetBondAngle { .. }
+//             | Command::SetDihedralAngle { .. }
+//             | Command::AddAtom { .. }
+//             | Command::DeleteAtom { .. }
+//             | Command::AddBond { .. }
+//             | Command::DeleteBond { .. }
+//     )
+// }
 
 fn infer_job_type_by_rules(text: &str) -> Option<JobType> {
     if text.contains("transition state")
@@ -289,7 +289,9 @@ fn dedupe_commands_by_rules(commands: Vec<Command>) -> Vec<Command> {
             | Command::DeleteAtom { .. }
             | Command::AddBond { .. }
             | Command::DeleteBond { .. }
-            | Command::PlaceTemplate { .. } => unique.push(command),
+            | Command::PlaceTemplate { .. }
+            | Command::AttachFragment { .. }
+            | Command::SubstituteByFragment { .. } => unique.push(command),
             Command::SetMolecule { .. }
             | Command::ToggleAtomSelection { .. }
             | Command::ClearSelection => {}

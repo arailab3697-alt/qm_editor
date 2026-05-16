@@ -123,6 +123,32 @@ pub fn reduce(mut state: AppState, command: Command) -> AppState {
                 direction,
             );
         }
+        Command::AttachFragment {
+            fragment_name,
+            target_atom_id,
+            rotation_angle,
+            orientation,
+        } => {
+            attach_fragment(
+                &mut state.domain.chemical_spec.molecule,
+                &fragment_name,
+                target_atom_id,
+                rotation_angle,
+                orientation,
+            );
+        }
+        Command::SubstituteByFragment {
+            fragment_name,
+            target_bond_id,
+            rotation_angle,
+        } => {
+            substitute_by_fragment(
+                &mut state.domain.chemical_spec.molecule,
+                &fragment_name,
+                target_bond_id,
+                rotation_angle,
+            );
+        }
         Command::SetMolecule { molecule } => {
             state.domain.chemical_spec.molecule = molecule;
             state.ui.selected_atoms.clear();
@@ -311,6 +337,122 @@ fn next_bond_id(molecule: &Molecule) -> u32 {
         .saturating_add(1)
 }
 
+fn attach_fragment(
+    molecule: &mut Molecule,
+    fragment_name: &str,
+    target_atom_id: u32,
+    _rotation_angle: f64,
+    _orientation: [f64; 3],
+) {
+    let fragments = crate::fragments::list_available_fragments();
+    let Some(fragment) = fragments.iter().find(|f| f.name == fragment_name) else {
+        return;
+    };
+    let Some(mut template) = crate::templates::get_template(&fragment.template_name) else {
+        return;
+    };
+    let Some(port) = fragment.attach_ports.first() else {
+        return;
+    };
+    let Some(target_pos) = atom_position(molecule, target_atom_id) else {
+        return;
+    };
+
+    let port_atom_id = port.target_id;
+
+    // Access atoms before moving to new collection
+    let port_atom_pos = template
+        .atoms
+        .iter()
+        .find(|a| a.id == port_atom_id)
+        .map(|a| a.position)
+        .unwrap_or([0.0, 0.0, 0.0]);
+
+    let mut template_atoms = template.atoms;
+    template_atoms.retain(|a| a.id != port_atom_id);
+    
+    // Shift atoms
+    let shift = sub(target_pos, port_atom_pos);
+    
+    for atom in &mut template_atoms {
+        atom.position = add(atom.position, shift);
+    }
+
+    let base_id = next_atom_id(molecule).saturating_sub(1);
+    let bond_base_id = next_bond_id(molecule).saturating_sub(1);
+
+    for atom in &mut template_atoms {
+        atom.id += base_id;
+    }
+    for bond in &mut template.bonds {
+        bond.id += bond_base_id;
+        bond.atom_ids[0] += base_id;
+        bond.atom_ids[1] += base_id;
+    }
+
+    molecule.atoms.extend(template_atoms);
+    molecule.bonds.extend(template.bonds);
+    
+    add_bond(molecule, [target_atom_id, port_atom_id + base_id], 1);
+}
+
+fn substitute_by_fragment(
+    molecule: &mut Molecule,
+    fragment_name: &str,
+    target_bond_id: u32,
+    _rotation_angle: f64,
+) {
+    let fragments = crate::fragments::list_available_fragments();
+    let Some(fragment) = fragments.iter().find(|f| f.name == fragment_name) else {
+        return;
+    };
+    let Some(mut template) = crate::templates::get_template(&fragment.template_name) else {
+        return;
+    };
+    
+    // Find the target bond
+    let Some(bond_index) = molecule.bonds.iter().position(|b| b.id == target_bond_id) else {
+        return;
+    };
+    let bond = molecule.bonds[bond_index].clone();
+    let bond_atoms = bond.atom_ids;
+
+    // Find a bond-type port in the fragment
+    let Some(port) = fragment.attach_ports.iter().find(|p| matches!(p.port_type, crate::domain::PortType::Bond)) else {
+        return;
+    };
+    
+    // Remove the target bond
+    molecule.bonds.remove(bond_index);
+
+    // Get positions of bond atoms for alignment
+    let pos_a = atom_position(molecule, bond_atoms[0]).unwrap_or([0.0, 0.0, 0.0]);
+    let pos_b = atom_position(molecule, bond_atoms[1]).unwrap_or([0.0, 0.0, 0.0]);
+    let midpoint = scale(add(pos_a, pos_b), 0.5);
+
+    // Align fragment to the midpoint and bond vector
+    // Simplification: Shift fragment port to midpoint
+    let base_id = next_atom_id(molecule).saturating_sub(1);
+    let bond_base_id = next_bond_id(molecule).saturating_sub(1);
+
+    for atom in &mut template.atoms {
+        atom.id += base_id;
+        atom.position = add(atom.position, midpoint);
+    }
+    for bond in &mut template.bonds {
+        bond.id += bond_base_id;
+        bond.atom_ids[0] += base_id;
+        bond.atom_ids[1] += base_id;
+    }
+
+    molecule.atoms.extend(template.atoms);
+    molecule.bonds.extend(template.bonds);
+    
+    // Connect new fragment to existing bond atoms (simplified logic)
+    add_bond(molecule, [bond_atoms[0], port.target_id + base_id], 1);
+    add_bond(molecule, [bond_atoms[1], port.target_id + base_id], 1);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,6 +498,21 @@ mod tests {
             (distance(atom_position_for(&state, 1), atom_position_for(&state, 2)) - 1.42).abs()
                 < 1e-9
         );
+    }
+
+    fn angle_degrees(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> Option<f64> {
+        let ba = sub(a, b);
+        let bc = sub(c, b);
+        let denominator = length(ba) * length(bc);
+        if denominator <= f64::EPSILON {
+            return None;
+        }
+        Some(
+            (dot(ba, bc) / denominator)
+                .clamp(-1.0, 1.0)
+                .acos()
+                .to_degrees(),
+        )
     }
 
     #[test]
@@ -446,18 +603,33 @@ mod tests {
         assert!(molecule.atoms.iter().any(|a| a.element == Element::C && a.position == [10.0, 0.0, 0.0]));
     }
 
-    fn angle_degrees(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> Option<f64> {
-        let ba = sub(a, b);
-        let bc = sub(c, b);
-        let denominator = length(ba) * length(bc);
-        if denominator <= f64::EPSILON {
-            return None;
-        }
-        Some(
-            (dot(ba, bc) / denominator)
-                .clamp(-1.0, 1.0)
-                .acos()
-                .to_degrees(),
-        )
+    #[test]
+    fn attach_fragment_removes_port_atom_and_connects() {
+        // Initial state: Water (3 atoms: O, H, H)
+        let state = initial_app_state();
+        // Methyl has 5 atoms (C + 4H). 
+        // Port atom is ID 1 (C).
+        // Methyl should add 4 atoms and bonds, effectively replacing the connection at C.
+        // Wait, current logic appends ALL atoms. I need to fix it.
+        let state = reduce(
+            state,
+            Command::AttachFragment {
+                fragment_name: "methyl".to_string(),
+                target_atom_id: 1, // Target is O in water
+                rotation_angle: 0.0,
+                orientation: [0.0, 0.0, 0.0],
+            },
+        );
+        let molecule = &state.domain.chemical_spec.molecule;
+
+        // Current implementation appends all atoms from template.
+        // If "methyl" uses "methane" template, it has 5 atoms (1C, 4H).
+        // The port is the Carbon (ID 1). 
+        // After attachment, ID 1 of template (shifted) should be removed 
+        // OR the logic should just not add the port atom itself if it's considered part of the "connection".
+        // Let's check atom count.
+        // 3 (initial) + 5 (methyl) = 8.
+        // If port is removed, 8 - 1 = 7.
+        assert_eq!(molecule.atoms.len(), 7); 
     }
 }

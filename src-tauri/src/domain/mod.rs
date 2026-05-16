@@ -150,12 +150,39 @@ pub enum Solvent {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PortType {
+    Atom,
+    Bond,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachPort {
+    pub id: String,
+    pub port_type: PortType,
+    pub target_id: u32,
+    pub recommended_usage: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FragmentDefinition {
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub template_name: String,
+    pub attach_ports: Vec<AttachPort>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(
     tag = "type",
     rename_all = "SCREAMING_SNAKE_CASE",
     rename_all_fields = "camelCase"
 )]
 pub enum Command {
+    // ... (rest of the commands)
     SetMethod {
         method: Method,
     },
@@ -206,6 +233,17 @@ pub enum Command {
         template_name: String,
         position: [f64; 3],
         direction: [f64; 3],
+    },
+    AttachFragment {
+        fragment_name: String,
+        target_atom_id: u32,
+        rotation_angle: f64,
+        orientation: [f64; 3],
+    },
+    SubstituteByFragment {
+        fragment_name: String,
+        target_bond_id: u32,
+        rotation_angle: f64,
     },
     SetMolecule {
         molecule: Molecule,

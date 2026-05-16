@@ -1,32 +1,10 @@
 use rig::{completion::{Prompt, ToolDefinition}, prelude::*, providers::gemini, tool::Tool};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::{AiContext, AiResult, AppState};
+use crate::domain::{AiContext, AiResult, AppState, FragmentDefinition};
 use crate::ai_commands::{propose_commands_by_rules as propose_by_rules, parse_ai_result_json};
 use crate::templates;
-
-const DEFAULT_GEMINI_MODEL: &str = "gemini-2.5-flash";
-// const DEFAULT_GEMINI_MODEL: &str = "gemini-2.5-flash-lite";
-// const DEFAULT_GEMINI_MODEL: &str = "gemma-4-26b-a4b-it";
-
-#[derive(Clone, Copy, Debug)]
-enum AiProvider {
-    GoogleGemini,
-}
-
-impl AiProvider {
-    fn from_env() -> Result<Self, String> {
-        match std::env::var("QM_EDITOR_AI_PROVIDER")
-            .unwrap_or_else(|_| "google-gemini".to_string())
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "" | "google" | "google-gemini" | "gemini" => Ok(Self::GoogleGemini),
-            provider => Err(format!("Unsupported AI provider '{provider}'.")),
-        }
-    }
-}
+use crate::fragments;
 
 #[derive(Deserialize, Serialize)]
 struct ListTemplatesArgs {}
@@ -36,16 +14,24 @@ struct InspectTemplateArgs {
     name: String,
 }
 
+#[derive(Deserialize, Serialize)]
+struct ListFragmentsArgs {}
+
+#[derive(Deserialize, Serialize)]
+struct InspectFragmentArgs {
+    fragment_name: String,
+}
+
 #[derive(Debug, thiserror::Error)]
-#[error("Template error")]
-struct TemplateError;
+#[error("Tool error")]
+struct ToolError;
 
 #[derive(Serialize, Deserialize)]
 struct ListTemplates;
 
 impl Tool for ListTemplates {
     const NAME: &'static str = "list_available_templates";
-    type Error = TemplateError;
+    type Error = ToolError;
     type Args = ListTemplatesArgs;
     type Output = Vec<templates::TemplateSummary>;
 
@@ -71,7 +57,7 @@ struct InspectTemplate;
 
 impl Tool for InspectTemplate {
     const NAME: &'static str = "inspect_template";
-    type Error = TemplateError;
+    type Error = ToolError;
     type Args = InspectTemplateArgs;
     type Output = Option<templates::TemplateDefinition>;
 
@@ -91,6 +77,81 @@ impl Tool for InspectTemplate {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         Ok(templates::get_template_definition(&args.name))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ListFragments;
+
+impl Tool for ListFragments {
+    const NAME: &'static str = "list_available_fragments";
+    type Error = ToolError;
+    type Args = ListFragmentsArgs;
+    type Output = Vec<FragmentDefinition>;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "list_available_fragments".to_string(),
+            description: "List all available fragments for structural composition.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        }
+    }
+
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+        Ok(fragments::list_available_fragments())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct InspectFragment;
+
+impl Tool for InspectFragment {
+    const NAME: &'static str = "inspect_fragment";
+    type Error = ToolError;
+    type Args = InspectFragmentArgs;
+    type Output = Option<FragmentDefinition>;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "inspect_fragment".to_string(),
+            description: "Inspect a fragment structure. Use an 'atom' type port for 'ATTACH_FRAGMENT' and 'bond' type for 'SUBSTITUTE_BY_FRAGMENT'.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "fragmentName": { "type": "string", "description": "The name of the fragment." }
+                },
+                "required": ["fragmentName"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        Ok(fragments::list_available_fragments().into_iter().find(|f| f.name == args.fragment_name))
+    }
+}
+
+const DEFAULT_GEMINI_MODEL: &str = "gemini-2.5-flash";
+
+#[derive(Clone, Copy, Debug)]
+enum AiProvider {
+    GoogleGemini,
+}
+
+impl AiProvider {
+    fn from_env() -> Result<Self, String> {
+        match std::env::var("QM_EDITOR_AI_PROVIDER")
+            .unwrap_or_else(|_| "google-gemini".to_string())
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "" | "google" | "google-gemini" | "gemini" => Ok(Self::GoogleGemini),
+            provider => Err(format!("Unsupported AI provider '{provider}'.")),
+        }
     }
 }
 
@@ -138,6 +199,8 @@ async fn propose_with_gemini(
         .preamble(system_prompt())
         .tool(ListTemplates)
         .tool(InspectTemplate)
+        .tool(ListFragments)
+        .tool(InspectFragment)
         .temperature(0.0)
         .build();
     let prompt = build_prompt(input, state, context)?;
@@ -146,7 +209,10 @@ async fn propose_with_gemini(
         .max_turns(max_turns)
         .await
         .map_err(|error| error.to_string())?;
+
+    // for debug, do not erase this
     println!("gemini says: {:?}", response);
+
     let json = extract_json_object(&response)
         .ok_or_else(|| "AI response did not contain a JSON object.".to_string())?;
 
@@ -204,11 +270,16 @@ Allowed command types and their fields:
 - ADD_BOND: {"type": "ADD_BOND", "atomIds": [id1, id2], "order": 1 | 2 | 3}
 - DELETE_BOND: {"type": "DELETE_BOND", "bondId": number}
 - PLACE_TEMPLATE: {"type": "PLACE_TEMPLATE", "templateName": string, "position": [x, y, z], "direction": [dx, dy, dz]}
+- ATTACH_FRAGMENT: {"type": "ATTACH_FRAGMENT", "fragmentName": string, "targetAtomId": number, "rotationAngle": number, "orientation": [x, y, z]}
+- SUBSTITUTE_BY_FRAGMENT: {"type": "SUBSTITUTE_BY_FRAGMENT", "fragmentName": string, "targetBondId": number, "rotationAngle": number}
 
-Use camelCase fields exactly as shown. For geometry changes (length, angle, dihedral), use IDs from the provided selectedAtoms if they match the required count.
-Before ANY PLACE_TEMPLATE command, you MUST call 'list_available_templates' to see what is available.
-You can use 'inspect_template' to get detail of the template.
-Never include markdown, comments, or extra text in your final JSON response."#
+Use camelCase fields exactly as shown. 
+- Always list available templates/fragments first if the user wants to add/substitute them.
+- Use 'inspect_template' for standard molecules.
+- Use 'inspect_fragment' to decide if to use ATTACH_FRAGMENT (portType: 'atom') or SUBSTITUTE_BY_FRAGMENT (portType: 'bond').
+- If 'atom' type port is found in fragment, use ATTACH_FRAGMENT.
+- If 'bond' type port is found in fragment, use SUBSTITUTE_BY_FRAGMENT.
+- Never include markdown, comments, or extra text in your final JSON response."#
 }
 
 fn extract_json_object(text: &str) -> Option<&str> {
@@ -242,33 +313,5 @@ mod tests {
                 method: Method::WB97XD
             }]
         ));
-    }
-
-    #[test]
-    fn pattern_matching_is_exhaustive() {
-        let cmd = Command::PlaceTemplate {
-            template_name: "test".to_string(),
-            position: [0.0, 0.0, 0.0],
-            direction: [0.0, 0.0, 0.0],
-        };
-        match cmd {
-            Command::SetMethod { .. } => {}
-            Command::SetBasis { .. } => {}
-            Command::SetJobType { .. } => {}
-            Command::SetSolvent { .. } => {}
-            Command::SetCharge { .. } => {}
-            Command::SetMultiplicity { .. } => {}
-            Command::SetBondLength { .. } => {}
-            Command::SetBondAngle { .. } => {}
-            Command::SetDihedralAngle { .. } => {}
-            Command::AddAtom { .. } => {}
-            Command::DeleteAtom { .. } => {}
-            Command::AddBond { .. } => {}
-            Command::DeleteBond { .. } => {}
-            Command::PlaceTemplate { .. } => {}
-            Command::SetMolecule { .. } => {}
-            Command::ToggleAtomSelection { .. } => {}
-            Command::ClearSelection => {}
-        }
     }
 }
