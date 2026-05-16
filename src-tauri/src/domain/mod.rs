@@ -202,6 +202,11 @@ pub enum Command {
     DeleteBond {
         bond_id: u32,
     },
+    PlaceTemplate {
+        template_name: String,
+        position: [f64; 3],
+        direction: [f64; 3],
+    },
     SetMolecule {
         molecule: Molecule,
     },

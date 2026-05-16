@@ -288,7 +288,8 @@ fn dedupe_commands_by_rules(commands: Vec<Command>) -> Vec<Command> {
             | Command::AddAtom { .. }
             | Command::DeleteAtom { .. }
             | Command::AddBond { .. }
-            | Command::DeleteBond { .. } => unique.push(command),
+            | Command::DeleteBond { .. }
+            | Command::PlaceTemplate { .. } => unique.push(command),
             Command::SetMolecule { .. }
             | Command::ToggleAtomSelection { .. }
             | Command::ClearSelection => {}

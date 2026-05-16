@@ -1,5 +1,6 @@
 use crate::domain::{AppState, Command, Element, MassNumber, Molecule, TwiceSpin, atom_index, atom_position};
 use crate::geometry::{add, dihedral_degrees, dot, length, normalize, perpendicular, rotate, scale, sub, distance};
+use crate::templates;
 
 pub fn initial_app_state() -> AppState {
     AppState {
@@ -109,6 +110,18 @@ pub fn reduce(mut state: AppState, command: Command) -> AppState {
                 .molecule
                 .bonds
                 .retain(|bond| bond.id != bond_id);
+        }
+        Command::PlaceTemplate {
+            template_name,
+            position,
+            direction,
+        } => {
+            place_template(
+                &mut state.domain.chemical_spec.molecule,
+                &template_name,
+                position,
+                direction,
+            );
         }
         Command::SetMolecule { molecule } => {
             state.domain.chemical_spec.molecule = molecule;
@@ -256,6 +269,28 @@ fn add_bond(molecule: &mut Molecule, atom_ids: [u32; 2], order: u8) {
     });
 }
 
+fn place_template(molecule: &mut Molecule, name: &str, position: [f64; 3], _direction: [f64; 3]) {
+    let Some(mut template) = templates::get_template(name) else {
+        return;
+    };
+    
+    let base_id = next_atom_id(molecule).saturating_sub(1);
+    let bond_base_id = next_bond_id(molecule).saturating_sub(1);
+
+    for atom in &mut template.atoms {
+        atom.id += base_id;
+        atom.position = add(atom.position, position);
+    }
+    for bond in &mut template.bonds {
+        bond.id += bond_base_id;
+        bond.atom_ids[0] += base_id;
+        bond.atom_ids[1] += base_id;
+    }
+
+    molecule.atoms.extend(template.atoms);
+    molecule.bonds.extend(template.bonds);
+}
+
 fn next_atom_id(molecule: &Molecule) -> u32 {
     molecule
         .atoms
@@ -394,6 +429,21 @@ mod tests {
         );
 
         assert_eq!(state.domain.chemical_spec.molecule.bonds.len(), 2);
+    }
+
+    #[test]
+    fn place_template_inserts_atoms_and_bonds() {
+        let state = reduce(
+            initial_app_state(),
+            Command::PlaceTemplate {
+                template_name: "methane".to_string(),
+                position: [10.0, 0.0, 0.0],
+                direction: [0.0, 0.0, 1.0],
+            },
+        );
+        let molecule = &state.domain.chemical_spec.molecule;
+        assert_eq!(molecule.atoms.len(), 3 + 5); // 3 original + 5 from methane
+        assert!(molecule.atoms.iter().any(|a| a.element == Element::C && a.position == [10.0, 0.0, 0.0]));
     }
 
     fn angle_degrees(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> Option<f64> {

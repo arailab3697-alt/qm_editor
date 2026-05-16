@@ -6,6 +6,7 @@ pub mod parser;
 pub mod gaussian;
 pub mod geometry;
 pub mod ai_commands;
+pub mod templates;
 
 use domain::{AppState, ChemicalSpec, Command, Molecule, ValidationMessage, AiContext, AiResult};
 use reducer::{initial_app_state, reduce};

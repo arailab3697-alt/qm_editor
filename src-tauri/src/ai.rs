@@ -1,10 +1,13 @@
-use rig::{completion::Prompt, prelude::*, providers::gemini};
-use serde::Serialize;
+use rig::{completion::{Prompt, ToolDefinition}, prelude::*, providers::gemini, tool::Tool};
+use serde::{Deserialize, Serialize};
 
 use crate::domain::{AiContext, AiResult, AppState};
 use crate::ai_commands::{propose_commands_by_rules as propose_by_rules, parse_ai_result_json};
+use crate::templates;
 
-const DEFAULT_GEMINI_MODEL: &str = "gemini-2.5-flash-lite";
+const DEFAULT_GEMINI_MODEL: &str = "gemini-2.5-flash";
+// const DEFAULT_GEMINI_MODEL: &str = "gemini-2.5-flash-lite";
+// const DEFAULT_GEMINI_MODEL: &str = "gemma-4-26b-a4b-it";
 
 #[derive(Clone, Copy, Debug)]
 enum AiProvider {
@@ -22,6 +25,72 @@ impl AiProvider {
             "" | "google" | "google-gemini" | "gemini" => Ok(Self::GoogleGemini),
             provider => Err(format!("Unsupported AI provider '{provider}'.")),
         }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct ListTemplatesArgs {}
+
+#[derive(Deserialize, Serialize)]
+struct InspectTemplateArgs {
+    name: String,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Template error")]
+struct TemplateError;
+
+#[derive(Serialize, Deserialize)]
+struct ListTemplates;
+
+impl Tool for ListTemplates {
+    const NAME: &'static str = "list_available_templates";
+    type Error = TemplateError;
+    type Args = ListTemplatesArgs;
+    type Output = Vec<templates::TemplateSummary>;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "list_available_templates".to_string(),
+            description: "List all available chemical templates that can be added to the molecule.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        }
+    }
+
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+        Ok(templates::list_available_templates())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct InspectTemplate;
+
+impl Tool for InspectTemplate {
+    const NAME: &'static str = "inspect_template";
+    type Error = TemplateError;
+    type Args = InspectTemplateArgs;
+    type Output = Option<templates::TemplateDefinition>;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "inspect_template".to_string(),
+            description: "Get detailed information about a specific template.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "The name of the template." }
+                },
+                "required": ["name"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        Ok(templates::get_template_definition(&args.name))
     }
 }
 
@@ -63,16 +132,21 @@ async fn propose_with_gemini(
     let client = gemini::Client::new(api_key).map_err(|error| error.to_string())?;
     let model = std::env::var("QM_EDITOR_GEMINI_MODEL")
         .unwrap_or_else(|_| DEFAULT_GEMINI_MODEL.to_string());
+    let max_turns = 3;
     let agent = client
         .agent(model)
         .preamble(system_prompt())
+        .tool(ListTemplates)
+        .tool(InspectTemplate)
         .temperature(0.0)
         .build();
     let prompt = build_prompt(input, state, context)?;
     let response = agent
         .prompt(prompt)
+        .max_turns(max_turns)
         .await
         .map_err(|error| error.to_string())?;
+    println!("gemini says: {:?}", response);
     let json = extract_json_object(&response)
         .ok_or_else(|| "AI response did not contain a JSON object.".to_string())?;
 
@@ -97,8 +171,22 @@ fn build_prompt(input: &str, state: &AppState, context: &AiContext) -> Result<St
 }
 
 fn system_prompt() -> &'static str {
-    r#"You convert user requests for a molecular Gaussian input editor into JSON commands.
-Return only one JSON object with this exact shape:
+    r#"You are a JSON command generator for a molecular Gaussian editor.
+
+Your response MUST be valid raw JSON.
+
+Do NOT wrap the JSON in markdown code fences.
+Do NOT output ```json.
+Do NOT output explanations before or after the JSON.
+Do NOT output natural language outside the JSON object.
+
+The FIRST character of your response MUST be '{'.
+The LAST character of your response MUST be '}'.
+
+If you cannot fulfill the request, return:
+{"commands":[],"explanation":"reason"}
+
+Return exactly one JSON object with this shape:
 {"commands":[],"explanation":"short explanation"}
 
 Allowed command types and their fields:
@@ -115,8 +203,12 @@ Allowed command types and their fields:
 - DELETE_ATOM: {"type": "DELETE_ATOM", "atomId": number}
 - ADD_BOND: {"type": "ADD_BOND", "atomIds": [id1, id2], "order": 1 | 2 | 3}
 - DELETE_BOND: {"type": "DELETE_BOND", "bondId": number}
+- PLACE_TEMPLATE: {"type": "PLACE_TEMPLATE", "templateName": string, "position": [x, y, z], "direction": [dx, dy, dz]}
 
-Use camelCase fields exactly as shown. For geometry changes (length, angle, dihedral), use IDs from the provided selectedAtoms if they match the required count. Never include markdown, comments, or extra text."#
+Use camelCase fields exactly as shown. For geometry changes (length, angle, dihedral), use IDs from the provided selectedAtoms if they match the required count.
+Before ANY PLACE_TEMPLATE command, you MUST call 'list_available_templates' to see what is available.
+You can use 'inspect_template' to get detail of the template.
+Never include markdown, comments, or extra text in your final JSON response."#
 }
 
 fn extract_json_object(text: &str) -> Option<&str> {
@@ -150,5 +242,33 @@ mod tests {
                 method: Method::WB97XD
             }]
         ));
+    }
+
+    #[test]
+    fn pattern_matching_is_exhaustive() {
+        let cmd = Command::PlaceTemplate {
+            template_name: "test".to_string(),
+            position: [0.0, 0.0, 0.0],
+            direction: [0.0, 0.0, 0.0],
+        };
+        match cmd {
+            Command::SetMethod { .. } => {}
+            Command::SetBasis { .. } => {}
+            Command::SetJobType { .. } => {}
+            Command::SetSolvent { .. } => {}
+            Command::SetCharge { .. } => {}
+            Command::SetMultiplicity { .. } => {}
+            Command::SetBondLength { .. } => {}
+            Command::SetBondAngle { .. } => {}
+            Command::SetDihedralAngle { .. } => {}
+            Command::AddAtom { .. } => {}
+            Command::DeleteAtom { .. } => {}
+            Command::AddBond { .. } => {}
+            Command::DeleteBond { .. } => {}
+            Command::PlaceTemplate { .. } => {}
+            Command::SetMolecule { .. } => {}
+            Command::ToggleAtomSelection { .. } => {}
+            Command::ClearSelection => {}
+        }
     }
 }
