@@ -1,26 +1,42 @@
-use crate::domain::{AiContext, AiResult, Command, GeometryEditMode, Method, JobType, Basis, Solvent, AtomSummary, CalculationSummary, atom_index, atom_position};
+use crate::domain::{AiContext, AiResult, Command, GeometryEditMode, Method, JobType, Basis, Solvent, AtomSummary, CalculationSummary, AtomIndexMapEntry, atom_index, atom_position};
 use crate::gaussian::method_name;
 use crate::geometry::{dihedral_degrees, sub, rotate};
 
 pub fn build_ai_context(state: &crate::domain::AppState) -> AiContext {
     let molecule = &state.domain.chemical_spec.molecule;
     let calculation = &state.domain.chemical_spec.calculation;
+    let atom_index_map = molecule
+        .atoms
+        .iter()
+        .enumerate()
+        .map(|(index, atom)| AtomIndexMapEntry {
+            display_index: index as u32 + 1,
+            atom_id: atom.id,
+        })
+        .collect::<Vec<_>>();
     let selected_atoms = state
         .ui
         .selected_atoms
         .iter()
-        .filter_map(|atom_id| molecule.atoms.iter().find(|atom| atom.id == *atom_id))
-        .map(|atom| AtomSummary {
-            id: atom.id,
-            element: atom.element,
-            isotope: atom.isotope,
-            nuclear_spin: atom.nuclear_spin,
-            position: atom.position,
+        .filter_map(|atom_id| {
+            molecule
+                .atoms
+                .iter()
+                .enumerate()
+                .find(|(_, atom)| atom.id == *atom_id)
+                .map(|(index, atom)| AtomSummary {
+                    display_index: index as u32 + 1,
+                    element: atom.element,
+                    isotope: atom.isotope,
+                    nuclear_spin: atom.nuclear_spin,
+                    position: atom.position,
+                })
         })
         .collect::<Vec<_>>();
 
     AiContext {
         selected_atoms,
+        atom_index_map,
         calculation: CalculationSummary {
             job_type: calculation.job_type,
             method: calculation.method,
@@ -208,7 +224,7 @@ fn infer_geometry_command_by_rules(text: &str, context: &AiContext) -> Option<Co
     let selected = context
         .selected_atoms
         .iter()
-        .map(|atom| atom.id)
+        .filter_map(|atom| display_index_to_atom_id(context, atom.display_index))
         .collect::<Vec<_>>();
 
     if (text.contains("dihedral") || text.contains("torsion"))
@@ -240,6 +256,102 @@ fn infer_geometry_command_by_rules(text: &str, context: &AiContext) -> Option<Co
     }
 
     None
+}
+
+pub fn resolve_atom_references(commands: Vec<Command>, context: &AiContext) -> Result<Vec<Command>, String> {
+    commands
+        .into_iter()
+        .map(|command| resolve_command_atom_references(command, context))
+        .collect()
+}
+
+fn resolve_command_atom_references(command: Command, context: &AiContext) -> Result<Command, String> {
+    let resolved = match command {
+        Command::SetBondLength { atom_ids, length, mode } => Command::SetBondLength {
+            atom_ids: resolve_pair(atom_ids, context)?,
+            length,
+            mode,
+        },
+        Command::SetBondAngle { atom_ids, angle, mode } => Command::SetBondAngle {
+            atom_ids: resolve_triplet(atom_ids, context)?,
+            angle,
+            mode,
+        },
+        Command::SetDihedralAngle { atom_ids, angle, mode } => Command::SetDihedralAngle {
+            atom_ids: resolve_quartet(atom_ids, context)?,
+            angle,
+            mode,
+        },
+        Command::DeleteAtom { atom_id } => Command::DeleteAtom {
+            atom_id: resolve_display_index(context, atom_id)?,
+        },
+        Command::AddBond { atom_ids, order } => Command::AddBond {
+            atom_ids: resolve_pair(atom_ids, context)?,
+            order,
+        },
+        Command::AttachFragment {
+            fragment_name,
+            target_atom_id,
+            rotation_angle,
+            orientation,
+        } => Command::AttachFragment {
+            fragment_name,
+            target_atom_id: resolve_display_index(context, target_atom_id)?,
+            rotation_angle,
+            orientation,
+        },
+        Command::SubstituteByFragment {
+            fragment_name,
+            start_atom_id,
+            end_atom_id,
+        } => Command::SubstituteByFragment {
+            fragment_name,
+            start_atom_id: resolve_display_index(context, start_atom_id)?,
+            end_atom_id: resolve_display_index(context, end_atom_id)?,
+        },
+        Command::ToggleAtomSelection { atom_id } => Command::ToggleAtomSelection {
+            atom_id: resolve_display_index(context, atom_id)?,
+        },
+        other => other,
+    };
+    Ok(resolved)
+}
+
+fn resolve_pair(atom_ids: [u32; 2], context: &AiContext) -> Result<[u32; 2], String> {
+    Ok([
+        resolve_display_index(context, atom_ids[0])?,
+        resolve_display_index(context, atom_ids[1])?,
+    ])
+}
+
+fn resolve_triplet(atom_ids: [u32; 3], context: &AiContext) -> Result<[u32; 3], String> {
+    Ok([
+        resolve_display_index(context, atom_ids[0])?,
+        resolve_display_index(context, atom_ids[1])?,
+        resolve_display_index(context, atom_ids[2])?,
+    ])
+}
+
+fn resolve_quartet(atom_ids: [u32; 4], context: &AiContext) -> Result<[u32; 4], String> {
+    Ok([
+        resolve_display_index(context, atom_ids[0])?,
+        resolve_display_index(context, atom_ids[1])?,
+        resolve_display_index(context, atom_ids[2])?,
+        resolve_display_index(context, atom_ids[3])?,
+    ])
+}
+
+fn resolve_display_index(context: &AiContext, display_index: u32) -> Result<u32, String> {
+    display_index_to_atom_id(context, display_index)
+        .ok_or_else(|| format!("Unknown display atom index: {display_index}"))
+}
+
+fn display_index_to_atom_id(context: &AiContext, display_index: u32) -> Option<u32> {
+    context
+        .atom_index_map
+        .iter()
+        .find(|entry| entry.display_index == display_index)
+        .map(|entry| entry.atom_id)
 }
 
 fn parse_geometry_value_by_rules(text: &str) -> Option<f64> {

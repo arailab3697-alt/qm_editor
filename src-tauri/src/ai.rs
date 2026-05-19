@@ -314,7 +314,8 @@ Use camelCase fields exactly as shown.
 - If a fragment has a 'bond' type port, SUBSTITUTE_BY_FRAGMENT must be used as the preferred method for integrating fragments.
 - Only use ATTACH_FRAGMENT if a 'bond' type port is not available and an 'atom' type port exists.
 - SUBSTITUTE_BY_FRAGMENT provides a more chemically accurate integration by replacing existing bonds.
-- Never include markdown, comments, or extra text in your final JSON response."#
+- Never include markdown, comments, or extra text in your final JSON response.
+- The context includes atomIndexMap as a two-layer ID map: displayIndex (1-based atom order shown to users / Gaussian rows) -> atomId (stable internal ID). You MUST use displayIndex values in all atom reference fields of output commands; the application resolves them to atomId during command interpretation."#
 }
 
 fn extract_json_object(text: &str) -> Option<&str> {
