@@ -20,6 +20,9 @@ export type Command =
   | { type: "DELETE_ATOM"; atomId: number }
   | { type: "ADD_BOND"; atomIds: [number, number]; order: 1 | 2 | 3 }
   | { type: "DELETE_BOND"; bondId: number }
+  | { type: "PLACE_TEMPLATE"; templateName: string; position: [number, number, number]; direction: [number, number, number] }
+  | { type: "ATTACH_FRAGMENT"; fragmentName: string; targetAtomId: number; rotationAngle: number; orientation: [number, number, number] }
+  | { type: "SUBSTITUTE_BY_FRAGMENT"; fragmentName: string; startAtomId: number; endAtomId: number }
   | { type: "SET_MOLECULE"; molecule: Molecule }
   | { type: "TOGGLE_ATOM_SELECTION"; atomId: number }
   | { type: "CLEAR_SELECTION" };
@@ -49,6 +52,9 @@ export const commandSchema = {
     { type: "object", properties: { type: { const: "DELETE_ATOM" }, atomId: { type: "number" } }, required: ["type", "atomId"], additionalProperties: false },
     { type: "object", properties: { type: { const: "ADD_BOND" }, atomIds: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 }, order: { enum: [1, 2, 3] } }, required: ["type", "atomIds", "order"], additionalProperties: false },
     { type: "object", properties: { type: { const: "DELETE_BOND" }, bondId: { type: "number" } }, required: ["type", "bondId"], additionalProperties: false },
+    { type: "object", properties: { type: { const: "PLACE_TEMPLATE" }, templateName: { type: "string" }, position: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 }, direction: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 } }, required: ["type", "templateName", "position", "direction"], additionalProperties: false },
+    { type: "object", properties: { type: { const: "ATTACH_FRAGMENT" }, fragmentName: { type: "string" }, targetAtomId: { type: "number" }, rotationAngle: { type: "number" }, orientation: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 } }, required: ["type", "fragmentName", "targetAtomId", "rotationAngle", "orientation"], additionalProperties: false },
+    { type: "object", properties: { type: { const: "SUBSTITUTE_BY_FRAGMENT" }, fragmentName: { type: "string" }, startAtomId: { type: "number" }, endAtomId: { type: "number" } }, required: ["type", "fragmentName", "startAtomId", "endAtomId"], additionalProperties: false },
     { type: "object", properties: { type: { const: "SET_MOLECULE" }, molecule: { type: "object" } }, required: ["type", "molecule"], additionalProperties: false },
     { type: "object", properties: { type: { const: "TOGGLE_ATOM_SELECTION" }, atomId: { type: "number" } }, required: ["type", "atomId"], additionalProperties: false },
     { type: "object", properties: { type: { const: "CLEAR_SELECTION" } }, required: ["type"], additionalProperties: false },
