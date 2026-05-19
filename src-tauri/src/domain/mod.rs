@@ -168,11 +168,22 @@ pub struct AttachPort {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FragmentDefinitionFile {
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub template_name: String,
+    pub attach_ports: Vec<AttachPort>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FragmentDefinition {
     pub name: String,
     pub display_name: String,
     pub description: String,
     pub template_name: String,
+    pub molecule: Molecule,
     pub attach_ports: Vec<AttachPort>,
 }
 
@@ -320,3 +331,5 @@ pub fn atom_position(molecule: &Molecule, atom_id: u32) -> Option<[f64; 3]> {
 pub fn same_bond(left: [u32; 2], right: [u32; 2]) -> bool {
     (left[0] == right[0] && left[1] == right[1]) || (left[0] == right[1] && left[1] == right[0])
 }
+
+pub mod fragment_test;

@@ -412,6 +412,8 @@ pub fn substitute_by_fragment(
     use std::collections::{HashMap, HashSet};
 
     let fragments = crate::fragments::list_available_fragments();
+    println!("substitute by fragment");
+    println!("{:?}, {:?}", fragments, fragment_name);
 
     let Some(fragment) = fragments.iter().find(|f| f.name == fragment_name) else {
         return;

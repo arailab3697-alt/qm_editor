@@ -9,7 +9,7 @@ pub mod ai_commands;
 pub mod templates;
 pub mod fragments;
 
-use domain::{AppState, ChemicalSpec, Command, Molecule, ValidationMessage, AiContext, AiResult, FragmentDefinition};
+use domain::{AppState, ChemicalSpec, Command, Molecule, ValidationMessage, AiContext, AiResult, FragmentDefinition, FragmentDefinitionFile};
 use reducer::{initial_app_state, reduce};
 use parser::parse_molecule_file;
 use gaussian::render_gaussian;
