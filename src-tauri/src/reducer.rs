@@ -1,4 +1,4 @@
-use crate::domain::{AppState, Command, Element, MassNumber, Molecule, TwiceSpin, atom_index, atom_position, Atom, Bond};
+use crate::domain::{AppState, Command, Element, GeometryEditMode, MassNumber, Molecule, TwiceSpin, atom_index, atom_position, Atom, Bond};
 use crate::geometry::{add, dihedral_degrees, dot, length, normalize, perpendicular, rotate, scale, sub, distance, rotation_from_to, rotate_vec};
 use crate::templates;
 
@@ -72,14 +72,14 @@ pub fn reduce(mut state: AppState, command: Command) -> AppState {
         Command::SetMultiplicity { multiplicity } => {
             state.domain.chemical_spec.calculation.multiplicity = multiplicity
         }
-        Command::SetBondLength { atom_ids, length } => {
-            set_bond_length(&mut state.domain.chemical_spec.molecule, atom_ids, length);
+        Command::SetBondLength { atom_ids, length, mode } => {
+            set_bond_length(&mut state.domain.chemical_spec.molecule, atom_ids, length, mode);
         }
-        Command::SetBondAngle { atom_ids, angle } => {
-            set_bond_angle(&mut state.domain.chemical_spec.molecule, atom_ids, angle);
+        Command::SetBondAngle { atom_ids, angle, mode } => {
+            set_bond_angle(&mut state.domain.chemical_spec.molecule, atom_ids, angle, mode);
         }
-        Command::SetDihedralAngle { atom_ids, angle } => {
-            set_dihedral_angle(&mut state.domain.chemical_spec.molecule, atom_ids, angle);
+        Command::SetDihedralAngle { atom_ids, angle, mode } => {
+            set_dihedral_angle(&mut state.domain.chemical_spec.molecule, atom_ids, angle, mode);
         }
         Command::AddAtom {
             element,
@@ -165,24 +165,27 @@ pub fn reduce(mut state: AppState, command: Command) -> AppState {
     state
 }
 
-fn set_bond_length(molecule: &mut Molecule, atom_ids: [u32; 2], length: f64) {
+fn set_bond_length(molecule: &mut Molecule, atom_ids: [u32; 2], length: f64, mode: GeometryEditMode) {
     if !length.is_finite() || length <= 0.0 {
         return;
     }
-    let Some(anchor) = atom_position(molecule, atom_ids[0]) else {
+    let Some(anchor_index) = atom_index(molecule, atom_ids[0]) else {
         return;
     };
     let Some(moving_index) = atom_index(molecule, atom_ids[1]) else {
         return;
     };
+    let anchor = molecule.atoms[anchor_index].position;
     let direction = sub(molecule.atoms[moving_index].position, anchor);
     let Some(unit) = normalize(direction) else {
         return;
     };
-    molecule.atoms[moving_index].position = add(anchor, scale(unit, length));
+    let target = add(anchor, scale(unit, length));
+    let delta = sub(target, molecule.atoms[moving_index].position);
+    apply_length_or_dihedral_motion(molecule, atom_ids[0], atom_ids[1], delta, mode);
 }
 
-fn set_bond_angle(molecule: &mut Molecule, atom_ids: [u32; 3], angle: f64) {
+fn set_bond_angle(molecule: &mut Molecule, atom_ids: [u32; 3], angle: f64, mode: GeometryEditMode) {
     if !angle.is_finite() || !(0.0..=180.0).contains(&angle) {
         return;
     }
@@ -218,10 +221,12 @@ fn set_bond_angle(molecule: &mut Molecule, atom_ids: [u32; 3], angle: f64) {
         ),
         moving_length,
     );
-    molecule.atoms[moving_index].position = add(center, new_vector);
+    let target = add(center, new_vector);
+    let delta = sub(target, molecule.atoms[moving_index].position);
+    apply_angle_motion(molecule, atom_ids[1], atom_ids[0], atom_ids[2], delta, mode);
 }
 
-fn set_dihedral_angle(molecule: &mut Molecule, atom_ids: [u32; 4], angle: f64) {
+fn set_dihedral_angle(molecule: &mut Molecule, atom_ids: [u32; 4], angle: f64, mode: GeometryEditMode) {
     if !angle.is_finite() {
         return;
     }
@@ -245,7 +250,100 @@ fn set_dihedral_angle(molecule: &mut Molecule, atom_ids: [u32; 4], angle: f64) {
     let Some(axis) = normalize(sub(third, second)) else {
         return;
     };
-    molecule.atoms[moving_index].position = add(third, rotate(sub(moving, third), axis, delta));
+    let target = add(third, rotate(sub(moving, third), axis, delta));
+    let delta_vec = sub(target, molecule.atoms[moving_index].position);
+    apply_length_or_dihedral_motion(molecule, atom_ids[1], atom_ids[2], delta_vec, mode);
+}
+
+fn apply_length_or_dihedral_motion(molecule: &mut Molecule, first_atom: u32, second_atom: u32, delta: [f64; 3], mode: GeometryEditMode) {
+    match mode {
+        GeometryEditMode::AtomOnly => {
+            if let Some(second_idx) = atom_index(molecule, second_atom) {
+                molecule.atoms[second_idx].position = add(molecule.atoms[second_idx].position, delta);
+            }
+        }
+        GeometryEditMode::MoveOtherSide => {
+            let Some(moving_ids) = connected_component_without_bond(molecule, second_atom, first_atom, [first_atom, second_atom]) else {
+                return;
+            };
+            translate_atoms(molecule, &moving_ids, delta);
+        }
+        GeometryEditMode::MoveBothSides => {
+            let Some(second_side) = connected_component_without_bond(molecule, second_atom, first_atom, [first_atom, second_atom]) else {
+                return;
+            };
+            let Some(first_side) = connected_component_without_bond(molecule, first_atom, second_atom, [first_atom, second_atom]) else {
+                return;
+            };
+            translate_atoms(molecule, &second_side, scale(delta, 0.5));
+            translate_atoms(molecule, &first_side, scale(delta, -0.5));
+        }
+    }
+}
+
+fn apply_angle_motion(molecule: &mut Molecule, center_atom: u32, fixed_atom: u32, moving_atom: u32, delta: [f64; 3], mode: GeometryEditMode) {
+    match mode {
+        GeometryEditMode::AtomOnly => {
+            if let Some(moving_idx) = atom_index(molecule, moving_atom) {
+                molecule.atoms[moving_idx].position = add(molecule.atoms[moving_idx].position, delta);
+            }
+        }
+        GeometryEditMode::MoveOtherSide => {
+            let Some(moving_ids) = connected_component_without_bond(molecule, moving_atom, center_atom, [center_atom, moving_atom]) else {
+                return;
+            };
+            translate_atoms(molecule, &moving_ids, delta);
+        }
+        GeometryEditMode::MoveBothSides => {
+            let Some(moving_side) = connected_component_without_bond(molecule, moving_atom, center_atom, [center_atom, moving_atom]) else {
+                return;
+            };
+            let Some(fixed_side) = connected_component_without_bond(molecule, fixed_atom, center_atom, [center_atom, fixed_atom]) else {
+                return;
+            };
+            translate_atoms(molecule, &moving_side, scale(delta, 0.5));
+            translate_atoms(molecule, &fixed_side, scale(delta, -0.5));
+        }
+    }
+}
+
+fn translate_atoms(molecule: &mut Molecule, atom_ids: &[u32], delta: [f64; 3]) {
+    for atom_id in atom_ids {
+        if let Some(idx) = atom_index(molecule, *atom_id) {
+            molecule.atoms[idx].position = add(molecule.atoms[idx].position, delta);
+        }
+    }
+}
+
+fn connected_component_without_bond(molecule: &Molecule, start: u32, blocked: u32, blocked_bond: [u32; 2]) -> Option<Vec<u32>> {
+    use std::collections::{HashSet, VecDeque};
+    let mut visited: HashSet<u32> = HashSet::new();
+    let mut queue = VecDeque::new();
+    visited.insert(start);
+    queue.push_back(start);
+
+    while let Some(current) = queue.pop_front() {
+        for bond in &molecule.bonds {
+            if crate::domain::same_bond(bond.atom_ids, blocked_bond) {
+                continue;
+            }
+            let next = if bond.atom_ids[0] == current {
+                bond.atom_ids[1]
+            } else if bond.atom_ids[1] == current {
+                bond.atom_ids[0]
+            } else {
+                continue;
+            };
+            if visited.insert(next) {
+                queue.push_back(next);
+            }
+        }
+    }
+    if visited.contains(&blocked) {
+        None
+    } else {
+        Some(visited.into_iter().collect())
+    }
 }
 
 fn add_atom(
@@ -682,6 +780,7 @@ mod tests {
             Command::SetBondLength {
                 atom_ids: [1, 2],
                 length: 1.42,
+                mode: GeometryEditMode::AtomOnly,
             },
         );
 
@@ -713,6 +812,7 @@ mod tests {
             Command::SetBondAngle {
                 atom_ids: [2, 1, 3],
                 angle: 120.0,
+                mode: GeometryEditMode::AtomOnly,
             },
         );
         let first = atom_position_for(&state, 2);

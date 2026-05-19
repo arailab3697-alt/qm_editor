@@ -1,4 +1,4 @@
-use crate::domain::{AiContext, AiResult, Command, Method, JobType, Basis, Solvent, AtomSummary, CalculationSummary, atom_index, atom_position};
+use crate::domain::{AiContext, AiResult, Command, GeometryEditMode, Method, JobType, Basis, Solvent, AtomSummary, CalculationSummary, atom_index, atom_position};
 use crate::gaussian::method_name;
 use crate::geometry::{dihedral_degrees, sub, rotate};
 
@@ -218,6 +218,7 @@ fn infer_geometry_command_by_rules(text: &str, context: &AiContext) -> Option<Co
         return Some(Command::SetDihedralAngle {
             atom_ids: [selected[0], selected[1], selected[2], selected[3]],
             angle: value,
+            mode: GeometryEditMode::AtomOnly,
         });
     }
     if (text.contains("bond angle") || text.contains("angle"))
@@ -226,6 +227,7 @@ fn infer_geometry_command_by_rules(text: &str, context: &AiContext) -> Option<Co
         return Some(Command::SetBondAngle {
             atom_ids: [selected[0], selected[1], selected[2]],
             angle: value,
+            mode: GeometryEditMode::AtomOnly,
         });
     }
     if (text.contains("bond length") || text.contains("distance"))
@@ -234,6 +236,7 @@ fn infer_geometry_command_by_rules(text: &str, context: &AiContext) -> Option<Co
         return Some(Command::SetBondLength {
             atom_ids: [selected[0], selected[1]],
             length: value,
+            mode: GeometryEditMode::AtomOnly,
         });
     }
 
