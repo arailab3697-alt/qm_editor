@@ -216,14 +216,20 @@ pub enum Command {
     SetBondLength {
         atom_ids: [u32; 2],
         length: f64,
+        #[serde(default)]
+        mode: GeometryEditMode,
     },
     SetBondAngle {
         atom_ids: [u32; 3],
         angle: f64,
+        #[serde(default)]
+        mode: GeometryEditMode,
     },
     SetDihedralAngle {
         atom_ids: [u32; 4],
         angle: f64,
+        #[serde(default)]
+        mode: GeometryEditMode,
     },
     AddAtom {
         element: Element,
@@ -264,6 +270,15 @@ pub enum Command {
         atom_id: u32,
     },
     ClearSelection,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum GeometryEditMode {
+    #[default]
+    AtomOnly,
+    MoveOtherSide,
+    MoveBothSides,
 }
 
 #[derive(Clone, Debug, Serialize)]
