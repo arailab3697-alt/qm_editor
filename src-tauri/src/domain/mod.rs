@@ -291,11 +291,18 @@ pub struct ValidationMessage {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtomSummary {
-    pub id: u32,
+    pub display_index: u32,
     pub element: Element,
     pub isotope: Option<MassNumber>,
     pub nuclear_spin: Option<TwiceSpin>,
     pub position: [f64; 3],
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AtomIndexMapEntry {
+    pub display_index: u32,
+    pub atom_id: u32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -313,6 +320,7 @@ pub struct CalculationSummary {
 #[serde(rename_all = "camelCase")]
 pub struct AiContext {
     pub selected_atoms: Vec<AtomSummary>,
+    pub atom_index_map: Vec<AtomIndexMapEntry>,
     pub calculation: CalculationSummary,
 }
 
