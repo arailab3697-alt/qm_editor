@@ -542,11 +542,16 @@ function AIAssistant() {
   const [request, setRequest] = useState("");
   const [result, setResult] = useState<AIResult | null>(null);
   const [error, setError] = useState("");
-  const [screenshot, setScreenshot] = useState<string | undefined>();
+
+  function captureScreenshot() {
+    const canvas = document.querySelector<HTMLCanvasElement>(".molecule-canvas canvas");
+    return canvas?.toDataURL("image/png");
+  }
 
   function generateCommands() {
     if (!state) return;
     setError("");
+    const screenshot = captureScreenshot();
     void invoke<AIResult>("propose_commands_via_ai_tauri", {
       input: request,
       state,
@@ -557,11 +562,6 @@ function AIAssistant() {
         setResult(null);
         setError(typeof caught === "string" ? caught : "Failed to generate AI commands.");
       });
-  }
-
-  function captureScreenshot() {
-    const canvas = document.querySelector<HTMLCanvasElement>(".molecule-canvas canvas");
-    setScreenshot(canvas?.toDataURL("image/png"));
   }
 
   function applyAICommands() {
@@ -583,9 +583,6 @@ function AIAssistant() {
         placeholder="Set WB97XD with def2-TZVP in THF, or set selected bond length to 1.42"
       />
       <div className="assistant-actions">
-        <button type="button" onClick={captureScreenshot}>
-          Capture View
-        </button>
         <button type="button" onClick={generateCommands}>
           Generate Commands
         </button>
@@ -597,7 +594,6 @@ function AIAssistant() {
         <div className="ai-output">
           <p>
             {result.explanation}
-            {screenshot ? " Screenshot context attached." : ""}
           </p>
           <pre>{JSON.stringify({ commands: result.commands, explanation: result.explanation }, null, 2)}</pre>
         </div>

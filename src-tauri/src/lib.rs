@@ -61,8 +61,8 @@ fn validate_chemical_spec_tauri(spec: ChemicalSpec) -> Vec<ValidationMessage> {
 }
 
 #[tauri::command]
-fn build_ai_context_tauri(state: AppState, screenshot: Option<String>) -> AiContext {
-    build_ai_context(&state, screenshot)
+fn build_ai_context_tauri(state: AppState) -> AiContext {
+    build_ai_context(&state)
 }
 
 #[tauri::command]
@@ -71,8 +71,8 @@ async fn propose_commands_via_ai_tauri(
     state: AppState,
     screenshot: Option<String>,
 ) -> Result<AiResult, String> {
-    let context = build_ai_context(&state, screenshot);
-    let result = ai::propose_commands_via_ai(&input, &state, &context).await;
+    let context = build_ai_context(&state);
+    let result = ai::propose_commands_via_ai(&input, &state, &context, screenshot).await;
     result
 }
 

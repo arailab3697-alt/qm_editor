@@ -2,7 +2,7 @@ use crate::domain::{AiContext, AiResult, Command, GeometryEditMode, Method, JobT
 use crate::gaussian::method_name;
 use crate::geometry::{dihedral_degrees, sub, rotate};
 
-pub fn build_ai_context(state: &crate::domain::AppState, screenshot: Option<String>) -> AiContext {
+pub fn build_ai_context(state: &crate::domain::AppState) -> AiContext {
     let molecule = &state.domain.chemical_spec.molecule;
     let calculation = &state.domain.chemical_spec.calculation;
     let selected_atoms = state
@@ -29,7 +29,6 @@ pub fn build_ai_context(state: &crate::domain::AppState, screenshot: Option<Stri
             charge: calculation.charge,
             multiplicity: calculation.multiplicity,
         },
-        screenshot,
     }
 }
 

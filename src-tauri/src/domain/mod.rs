@@ -314,7 +314,6 @@ pub struct CalculationSummary {
 pub struct AiContext {
     pub selected_atoms: Vec<AtomSummary>,
     pub calculation: CalculationSummary,
-    pub screenshot: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
