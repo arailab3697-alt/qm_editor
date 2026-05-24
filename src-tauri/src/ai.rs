@@ -21,6 +21,8 @@ struct ListFragmentsArgs {}
 struct InspectFragmentArgs {
     fragment_name: String,
 }
+#[derive(Deserialize, Serialize)]
+struct UseScreenshotArgs {}
 
 #[derive(Debug, thiserror::Error)]
 #[error("Tool error")]
@@ -134,6 +136,32 @@ impl Tool for InspectFragment {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct UseScreenshotContext;
+
+impl Tool for UseScreenshotContext {
+    const NAME: &'static str = "use_screenshot_context";
+    type Error = ToolError;
+    type Args = UseScreenshotArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "use_screenshot_context".to_string(),
+            description: "Use this tool when visual context from the latest molecule canvas screenshot is needed.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        }
+    }
+
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+        Ok("Screenshot context is available in request.screenshot when provided.".to_string())
+    }
+}
+
 // const DEFAULT_GEMINI_MODEL: &str = "gemini-2.5-flash";
 const DEFAULT_GEMINI_MODEL: &str = "gemini-3.1-flash-lite-preview";
 
@@ -160,6 +188,7 @@ pub async fn propose_commands_via_ai(
     input: &str,
     _state: &AppState,
     context: &AiContext,
+    screenshot: Option<String>,
 ) -> Result<AiResult, String> {
     if input.trim().is_empty() {
         return Ok(propose_by_rules(input, context));
@@ -174,7 +203,7 @@ pub async fn propose_commands_via_ai(
     }
 
     match AiProvider::from_env()? {
-        AiProvider::GoogleGemini => propose_with_gemini(input, _state, context).await,
+        AiProvider::GoogleGemini => propose_with_gemini(input, _state, context, screenshot).await,
     }
 }
 
@@ -187,6 +216,7 @@ async fn propose_with_gemini(
     input: &str,
     state: &AppState,
     context: &AiContext,
+    screenshot: Option<String>,
 ) -> Result<AiResult, String> {
     let api_key = std::env::var("GEMINI_API_KEY")
         .or_else(|_| std::env::var("GOOGLE_API_KEY"))
@@ -202,9 +232,10 @@ async fn propose_with_gemini(
         .tool(InspectTemplate)
         .tool(ListFragments)
         .tool(InspectFragment)
+        .tool(UseScreenshotContext)
         .temperature(0.0)
         .build();
-    let prompt = build_prompt(input, state, context)?;
+    let prompt = build_prompt(input, state, context, screenshot)?;
     let response = agent
         .prompt(prompt)
         .max_turns(max_turns)
@@ -226,13 +257,15 @@ struct PromptPayload<'a> {
     request: &'a str,
     state: &'a AppState,
     context: &'a AiContext,
+    screenshot: Option<&'a str>,
 }
 
-fn build_prompt(input: &str, state: &AppState, context: &AiContext) -> Result<String, String> {
+fn build_prompt(input: &str, state: &AppState, context: &AiContext, screenshot: Option<String>) -> Result<String, String> {
     let payload = PromptPayload {
         request: input,
         state,
         context,
+        screenshot: screenshot.as_deref(),
     };
     serde_json::to_string_pretty(&payload).map_err(|error| error.to_string())
 }
@@ -263,9 +296,9 @@ Allowed command types and their fields:
 - SET_SOLVENT: {"type": "SET_SOLVENT", "solvent": "THF" | "Water" | null}
 - SET_CHARGE: {"type": "SET_CHARGE", "charge": number}
 - SET_MULTIPLICITY: {"type": "SET_MULTIPLICITY", "multiplicity": number}
-- SET_BOND_LENGTH: {"type": "SET_BOND_LENGTH", "atomIds": [id1, id2], "length": number}
-- SET_BOND_ANGLE: {"type": "SET_BOND_ANGLE", "atomIds": [id1, id2, id3], "angle": number}
-- SET_DIHEDRAL_ANGLE: {"type": "SET_DIHEDRAL_ANGLE", "atomIds": [id1, id2, id3, id4], "angle": number}
+- SET_BOND_LENGTH: {"type": "SET_BOND_LENGTH", "atomIds": [id1, id2], "length": number, "mode"?: "ATOM_ONLY" | "MOVE_OTHER_SIDE" | "MOVE_BOTH_SIDES"}
+- SET_BOND_ANGLE: {"type": "SET_BOND_ANGLE", "atomIds": [id1, id2, id3], "angle": number, "mode"?: "ATOM_ONLY" | "MOVE_OTHER_SIDE" | "MOVE_BOTH_SIDES"}
+- SET_DIHEDRAL_ANGLE: {"type": "SET_DIHEDRAL_ANGLE", "atomIds": [id1, id2, id3, id4], "angle": number, "mode"?: "ATOM_ONLY" | "MOVE_OTHER_SIDE" | "MOVE_BOTH_SIDES"}
 - ADD_ATOM: {"type": "ADD_ATOM", "element": string, "position": [x, y, z], "isotope"?: number, "nuclearSpin"?: number}
 - DELETE_ATOM: {"type": "DELETE_ATOM", "atomId": number}
 - ADD_BOND: {"type": "ADD_BOND", "atomIds": [id1, id2], "order": 1 | 2 | 3}
@@ -281,7 +314,8 @@ Use camelCase fields exactly as shown.
 - If a fragment has a 'bond' type port, SUBSTITUTE_BY_FRAGMENT must be used as the preferred method for integrating fragments.
 - Only use ATTACH_FRAGMENT if a 'bond' type port is not available and an 'atom' type port exists.
 - SUBSTITUTE_BY_FRAGMENT provides a more chemically accurate integration by replacing existing bonds.
-- Never include markdown, comments, or extra text in your final JSON response."#
+- Never include markdown, comments, or extra text in your final JSON response.
+- The context includes atomIndexMap as a two-layer ID map: displayIndex (1-based atom order shown to users / Gaussian rows) -> atomId (stable internal ID). You MUST use displayIndex values in all atom reference fields of output commands; the application resolves them to atomId during command interpretation."#
 }
 
 fn extract_json_object(text: &str) -> Option<&str> {
@@ -305,7 +339,7 @@ mod tests {
     #[test]
     fn uses_local_parser_for_supported_short_request() {
         let state = reducer::initial_app_state();
-        let context = ai_commands::build_ai_context(&state, None);
+        let context = ai_commands::build_ai_context(&state);
         let result = local_result_for_supported_request("set wb97xd", &context)
             .expect("supported short request should be handled locally");
 

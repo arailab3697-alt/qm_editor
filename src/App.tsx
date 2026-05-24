@@ -542,11 +542,20 @@ function AIAssistant() {
   const [request, setRequest] = useState("");
   const [result, setResult] = useState<AIResult | null>(null);
   const [error, setError] = useState("");
-  const [screenshot, setScreenshot] = useState<string | undefined>();
+  const [loading, setLoading] = useState(false);
+
+  function captureScreenshot() {
+    const canvas = document.querySelector<HTMLCanvasElement>(".molecule-canvas canvas");
+    return canvas?.toDataURL("image/png");
+  }
 
   function generateCommands() {
-    if (!state) return;
+    if (!state || loading) return;
     setError("");
+    setLoading(true);
+    setResult(null);
+
+    const screenshot = captureScreenshot();
     void invoke<AIResult>("propose_commands_via_ai_tauri", {
       input: request,
       state,
@@ -556,17 +565,16 @@ function AIAssistant() {
       .catch((caught) => {
         setResult(null);
         setError(typeof caught === "string" ? caught : "Failed to generate AI commands.");
+      })
+      .finally(() => {
+        setLoading(false);
       });
-  }
-
-  function captureScreenshot() {
-    const canvas = document.querySelector<HTMLCanvasElement>(".molecule-canvas canvas");
-    setScreenshot(canvas?.toDataURL("image/png"));
   }
 
   function applyAICommands() {
     if (!result || result.commands.length === 0) return;
     void applyCommands(result.commands);
+    setResult(null);
   }
 
   return (
@@ -581,15 +589,13 @@ function AIAssistant() {
         value={request}
         onChange={(event) => setRequest(event.currentTarget.value)}
         placeholder="Set WB97XD with def2-TZVP in THF, or set selected bond length to 1.42"
+        disabled={loading}
       />
       <div className="assistant-actions">
-        <button type="button" onClick={captureScreenshot}>
-          Capture View
+        <button type="button" onClick={generateCommands} disabled={loading || !request.trim()}>
+          {loading ? "Generating..." : "Generate Commands"}
         </button>
-        <button type="button" onClick={generateCommands}>
-          Generate Commands
-        </button>
-        <button type="button" disabled={!result || result.commands.length === 0} onClick={applyAICommands}>
+        <button type="button" disabled={loading || !result || result.commands.length === 0} onClick={applyAICommands}>
           Apply Commands
         </button>
       </div>
@@ -597,7 +603,6 @@ function AIAssistant() {
         <div className="ai-output">
           <p>
             {result.explanation}
-            {screenshot ? " Screenshot context attached." : ""}
           </p>
           <pre>{JSON.stringify({ commands: result.commands, explanation: result.explanation }, null, 2)}</pre>
         </div>
