@@ -6,10 +6,13 @@ use rig::{
 };
 use serde::{Deserialize, Serialize};
 
+mod checker;
+use checker::Checker;
+
 use crate::ai_commands::{parse_ai_result_json, propose_commands_by_rules as propose_by_rules};
 use crate::domain::{
-    AiContext, AiResult, AppState, AtomSummary, CalculationSpec, CalculationSummary, Element,
-    FragmentDefinition, MassNumber, TwiceSpin,
+    AiContext, AiResult, AppState, AtomSummary, CalculationSpec, CalculationSummary,
+    Element, FragmentDefinition, MassNumber, TwiceSpin,
 };
 use crate::fragments;
 use crate::templates;
@@ -246,20 +249,41 @@ async fn propose_with_gemini(
         .tool(UseScreenshotContext)
         .temperature(0.0)
         .build();
-    let prompt = build_prompt(input, state, context, screenshot)?;
-    let response = agent
-        .prompt(prompt)
-        .max_turns(max_turns)
-        .await
-        .map_err(|error| error.to_string())?;
 
-    // for debug, do not erase this
-    println!("gemini says: {:?}", response);
+    let mut prompt = build_prompt(input, state, context, screenshot)?;
+    let checker = Checker::new();
 
-    let json = extract_json_object(&response)
-        .ok_or_else(|| "AI response did not contain a JSON object.".to_string())?;
+    let retry_count = 3;
 
-    parse_ai_result_json(json)
+    for attempt in 0..retry_count {
+        let response = agent
+            .prompt(prompt.clone())
+            .max_turns(max_turns)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        // for debug, do not erase this
+        println!("gemini says (attempt {}): {:?}", attempt + 1, response);
+
+        match checker.check(&response, context) {
+            Ok(output) => return Ok(output.result),
+            Err(diag) => {
+                if attempt == 2 {
+                    return Err(format!(
+                        "AI failed to produce valid output after 3 attempts. Diagnostics: {:?}",
+                        diag.diagnostics
+                    ));
+                }
+                prompt = format!(
+                    "Your previous response failed validation. Please fix it according to these diagnostics:\n{}\nRepair Policy: {:?}",
+                    serde_json::to_string_pretty(&diag.diagnostics).unwrap_or_else(|_| "Error serializing diagnostics".to_string()),
+                    diag.repair_policy
+                );
+            }
+        }
+    }
+
+    Err("Unexpected end of validation loop".to_string())
 }
 
 #[derive(Serialize)]
@@ -441,10 +465,16 @@ The FIRST character of your response MUST be '{'.
 The LAST character of your response MUST be '}'.
 
 If you cannot fulfill the request, return:
-{"commands":[],"explanation":"reason"}
+{"result":{"commands":[],"explanation":"reason"},"ignoredWarning":[]}
 
 Return exactly one JSON object with this shape:
-{"commands":[],"explanation":"short explanation"}
+{
+  "result": {
+    "commands": [],
+    "explanation": "short explanation"
+  },
+  "ignoredWarning": []
+}
 
 Allowed command types and their fields:
 - SET_METHOD: {"type": "SET_METHOD", "method": "B3LYP" | "WB97XD"}

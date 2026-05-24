@@ -343,6 +343,27 @@ pub struct AiResult {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AiOutput {
+    pub result: AiResult,
+    pub ignored_warning: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDiagnostic {
+    pub diagnostics: Vec<String>,
+    pub repair_policy: AiRepairPolicy,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiRepairPolicy {
+    pub fix_error: bool,
+    pub fix_warning: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AiProposal {
     pub commands: Vec<Command>,
     pub resolved_commands: Vec<Command>,
