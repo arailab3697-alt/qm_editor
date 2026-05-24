@@ -1,10 +1,18 @@
-use rig::{completion::{Prompt, ToolDefinition}, prelude::*, providers::gemini, tool::Tool};
+use rig::{
+    completion::{Prompt, ToolDefinition},
+    prelude::*,
+    providers::gemini,
+    tool::Tool,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::{AiContext, AiResult, AppState, FragmentDefinition};
-use crate::ai_commands::{propose_commands_by_rules as propose_by_rules, parse_ai_result_json};
-use crate::templates;
+use crate::ai_commands::{parse_ai_result_json, propose_commands_by_rules as propose_by_rules};
+use crate::domain::{
+    AiContext, AiResult, AppState, AtomSummary, CalculationSpec, CalculationSummary, Element,
+    FragmentDefinition, MassNumber, TwiceSpin,
+};
 use crate::fragments;
+use crate::templates;
 
 #[derive(Deserialize, Serialize)]
 struct ListTemplatesArgs {}
@@ -40,7 +48,8 @@ impl Tool for ListTemplates {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: "list_available_templates".to_string(),
-            description: "List all available chemical templates that can be added to the molecule.".to_string(),
+            description: "List all available chemical templates that can be added to the molecule."
+                .to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {},
@@ -132,7 +141,9 @@ impl Tool for InspectFragment {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(fragments::list_available_fragments().into_iter().find(|f| f.name == args.fragment_name))
+        Ok(fragments::list_available_fragments()
+            .into_iter()
+            .find(|f| f.name == args.fragment_name))
     }
 }
 
@@ -255,19 +266,165 @@ async fn propose_with_gemini(
 #[serde(rename_all = "camelCase")]
 struct PromptPayload<'a> {
     request: &'a str,
-    state: &'a AppState,
-    context: &'a AiContext,
+    state: AiVisibleState<'a>,
+    context: AiVisibleContext,
     screenshot: Option<&'a str>,
 }
 
-fn build_prompt(input: &str, state: &AppState, context: &AiContext, screenshot: Option<String>) -> Result<String, String> {
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiVisibleState<'a> {
+    domain: AiVisibleDomain<'a>,
+    ui: AiVisibleUi,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiVisibleDomain<'a> {
+    chemical_spec: AiVisibleChemicalSpec<'a>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiVisibleChemicalSpec<'a> {
+    molecule: AiVisibleMolecule,
+    calculation: &'a CalculationSpec,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiVisibleMolecule {
+    name: String,
+    atoms: Vec<AiVisibleAtom>,
+    bonds: Vec<AiVisibleBond>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiVisibleAtom {
+    id: u32,
+    element: Element,
+    isotope: Option<MassNumber>,
+    nuclear_spin: Option<TwiceSpin>,
+    position: [f64; 3],
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiVisibleBond {
+    id: u32,
+    atom_ids: [u32; 2],
+    order: u8,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiVisibleUi {
+    selected_atoms: Vec<u32>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiVisibleContext {
+    selected_atoms: Vec<AtomSummary>,
+    atom_index_map: Vec<AiVisibleAtomIndexMapEntry>,
+    calculation: CalculationSummary,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiVisibleAtomIndexMapEntry {
+    display_index: u32,
+    atom_id: u32,
+}
+
+fn build_prompt(
+    input: &str,
+    state: &AppState,
+    context: &AiContext,
+    screenshot: Option<String>,
+) -> Result<String, String> {
     let payload = PromptPayload {
         request: input,
-        state,
-        context,
+        state: build_ai_visible_state(state),
+        context: build_ai_visible_context(context),
         screenshot: screenshot.as_deref(),
     };
     serde_json::to_string_pretty(&payload).map_err(|error| error.to_string())
+}
+
+fn build_ai_visible_context(context: &AiContext) -> AiVisibleContext {
+    AiVisibleContext {
+        selected_atoms: context.selected_atoms.clone(),
+        atom_index_map: context
+            .atom_index_map
+            .iter()
+            .map(|entry| AiVisibleAtomIndexMapEntry {
+                display_index: entry.display_index,
+                atom_id: entry.display_index,
+            })
+            .collect(),
+        calculation: context.calculation.clone(),
+    }
+}
+
+fn build_ai_visible_state(state: &AppState) -> AiVisibleState<'_> {
+    let molecule = &state.domain.chemical_spec.molecule;
+    let display_index_for_atom_id = molecule
+        .atoms
+        .iter()
+        .enumerate()
+        .map(|(index, atom)| (atom.id, index as u32 + 1))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    let atoms = molecule
+        .atoms
+        .iter()
+        .enumerate()
+        .map(|(index, atom)| AiVisibleAtom {
+            id: index as u32 + 1,
+            element: atom.element,
+            isotope: atom.isotope,
+            nuclear_spin: atom.nuclear_spin,
+            position: atom.position,
+        })
+        .collect();
+
+    let bonds = molecule
+        .bonds
+        .iter()
+        .enumerate()
+        .filter_map(|(index, bond)| {
+            let first_atom_id = display_index_for_atom_id.get(&bond.atom_ids[0])?;
+            let second_atom_id = display_index_for_atom_id.get(&bond.atom_ids[1])?;
+            Some(AiVisibleBond {
+                id: index as u32 + 1,
+                atom_ids: [*first_atom_id, *second_atom_id],
+                order: bond.order,
+            })
+        })
+        .collect();
+
+    let selected_atoms = state
+        .ui
+        .selected_atoms
+        .iter()
+        .filter_map(|atom_id| display_index_for_atom_id.get(atom_id).copied())
+        .collect();
+
+    AiVisibleState {
+        domain: AiVisibleDomain {
+            chemical_spec: AiVisibleChemicalSpec {
+                molecule: AiVisibleMolecule {
+                    name: molecule.name.clone(),
+                    atoms,
+                    bonds,
+                },
+                calculation: &state.domain.chemical_spec.calculation,
+            },
+        },
+        ui: AiVisibleUi { selected_atoms },
+    }
 }
 
 fn system_prompt() -> &'static str {
@@ -305,7 +462,7 @@ Allowed command types and their fields:
 - DELETE_BOND: {"type": "DELETE_BOND", "bondId": number}
 - PLACE_TEMPLATE: {"type": "PLACE_TEMPLATE", "templateName": string, "position": [x, y, z], "direction": [dx, dy, dz]}
 - ATTACH_FRAGMENT: {"type": "ATTACH_FRAGMENT", "fragmentName": string, "targetAtomId": number, "rotationAngle": number, "orientation": [x, y, z]}
-- SUBSTITUTE_BY_FRAGMENT: {"type": "SUBSTITUTE_BY_FRAGMENT", "fragmentName": string, "startAtomId": number, "endAtomId": number}
+- SUBSTITUTE_BY_FRAGMENT: {"type": "SUBSTITUTE_BY_FRAGMENT", "fragmentName": string, "startAtomId": number, "endAtomId": number}; startAtomId is the existing atom to remove/replace, endAtomId is the bonded existing atom to keep/connect.
 
 Use camelCase fields exactly as shown. 
 - Always list available templates/fragments first if the user wants to add/substitute them.
@@ -315,7 +472,8 @@ Use camelCase fields exactly as shown.
 - Only use ATTACH_FRAGMENT if a 'bond' type port is not available and an 'atom' type port exists.
 - SUBSTITUTE_BY_FRAGMENT provides a more chemically accurate integration by replacing existing bonds.
 - Never include markdown, comments, or extra text in your final JSON response.
-- The context includes atomIndexMap as a two-layer ID map: displayIndex (1-based atom order shown to users / Gaussian rows) -> atomId (stable internal ID). You MUST use displayIndex values in all atom reference fields of output commands; the application resolves them to atomId during command interpretation."#
+- The state shown to you uses display IDs only: molecule.atoms[].id, molecule.bonds[].atomIds, and ui.selectedAtoms are all 1-based display atom IDs in current atom order.
+- The context also uses display IDs only. You MUST use these display IDs in all atom reference fields of output commands; the application resolves them to stable internal atomId values after your response."#
 }
 
 fn extract_json_object(text: &str) -> Option<&str> {
@@ -332,9 +490,9 @@ fn extract_json_object(text: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai_commands;
     use crate::domain::{self, Command, Method};
     use crate::reducer;
-    use crate::ai_commands;
 
     #[test]
     fn uses_local_parser_for_supported_short_request() {
@@ -349,5 +507,46 @@ mod tests {
                 method: Method::WB97XD
             }]
         ));
+    }
+
+    #[test]
+    fn prompt_state_uses_display_atom_ids_for_atoms_bonds_and_selection() {
+        let mut state = reducer::initial_app_state();
+        state.domain.chemical_spec.molecule.atoms[0].id = 10;
+        state.domain.chemical_spec.molecule.atoms[1].id = 20;
+        state.domain.chemical_spec.molecule.atoms[2].id = 30;
+        state.domain.chemical_spec.molecule.bonds[0].atom_ids = [10, 20];
+        state.domain.chemical_spec.molecule.bonds[1].atom_ids = [10, 30];
+        state.ui.selected_atoms = vec![20];
+
+        let context = ai_commands::build_ai_context(&state);
+        let prompt = build_prompt("inspect", &state, &context, None).expect("prompt should build");
+        let json: serde_json::Value = serde_json::from_str(&prompt).expect("prompt should be JSON");
+
+        assert_eq!(
+            json["state"]["domain"]["chemicalSpec"]["molecule"]["atoms"][0]["id"],
+            1
+        );
+        assert_eq!(
+            json["state"]["domain"]["chemicalSpec"]["molecule"]["atoms"][1]["id"],
+            2
+        );
+        assert_eq!(
+            json["state"]["domain"]["chemicalSpec"]["molecule"]["bonds"][0]["atomIds"],
+            serde_json::json!([1, 2])
+        );
+        assert_eq!(
+            json["state"]["domain"]["chemicalSpec"]["molecule"]["bonds"][1]["atomIds"],
+            serde_json::json!([1, 3])
+        );
+        assert_eq!(json["state"]["ui"]["selectedAtoms"], serde_json::json!([2]));
+        assert_eq!(
+            json["context"]["atomIndexMap"],
+            serde_json::json!([
+                { "displayIndex": 1, "atomId": 1 },
+                { "displayIndex": 2, "atomId": 2 },
+                { "displayIndex": 3, "atomId": 3 }
+            ])
+        );
     }
 }

@@ -1,5 +1,11 @@
-use crate::domain::{AppState, Command, Element, GeometryEditMode, MassNumber, Molecule, TwiceSpin, atom_index, atom_position, Atom, Bond};
-use crate::geometry::{add, dihedral_degrees, dot, length, normalize, perpendicular, rotate, scale, sub, distance, rotation_from_to, rotate_vec};
+use crate::domain::{
+    atom_index, atom_position, AppState, Atom, Bond, Command, Element, GeometryEditMode,
+    MassNumber, Molecule, SubstituteByFragmentCompletion, TwiceSpin,
+};
+use crate::geometry::{
+    add, dihedral_degrees, distance, dot, length, normalize, perpendicular, rotate, rotate_vec,
+    rotation_from_to, scale, sub,
+};
 use crate::templates;
 
 pub fn initial_app_state() -> AppState {
@@ -72,14 +78,41 @@ pub fn reduce(mut state: AppState, command: Command) -> AppState {
         Command::SetMultiplicity { multiplicity } => {
             state.domain.chemical_spec.calculation.multiplicity = multiplicity
         }
-        Command::SetBondLength { atom_ids, length, mode } => {
-            set_bond_length(&mut state.domain.chemical_spec.molecule, atom_ids, length, mode);
+        Command::SetBondLength {
+            atom_ids,
+            length,
+            mode,
+        } => {
+            set_bond_length(
+                &mut state.domain.chemical_spec.molecule,
+                atom_ids,
+                length,
+                mode,
+            );
         }
-        Command::SetBondAngle { atom_ids, angle, mode } => {
-            set_bond_angle(&mut state.domain.chemical_spec.molecule, atom_ids, angle, mode);
+        Command::SetBondAngle {
+            atom_ids,
+            angle,
+            mode,
+        } => {
+            set_bond_angle(
+                &mut state.domain.chemical_spec.molecule,
+                atom_ids,
+                angle,
+                mode,
+            );
         }
-        Command::SetDihedralAngle { atom_ids, angle, mode } => {
-            set_dihedral_angle(&mut state.domain.chemical_spec.molecule, atom_ids, angle, mode);
+        Command::SetDihedralAngle {
+            atom_ids,
+            angle,
+            mode,
+        } => {
+            set_dihedral_angle(
+                &mut state.domain.chemical_spec.molecule,
+                atom_ids,
+                angle,
+                mode,
+            );
         }
         Command::AddAtom {
             element,
@@ -148,6 +181,18 @@ pub fn reduce(mut state: AppState, command: Command) -> AppState {
                 start_atom_id,
                 end_atom_id,
             );
+            let atom_ids: std::collections::HashSet<u32> = state
+                .domain
+                .chemical_spec
+                .molecule
+                .atoms
+                .iter()
+                .map(|atom| atom.id)
+                .collect();
+            state
+                .ui
+                .selected_atoms
+                .retain(|atom_id| atom_ids.contains(atom_id));
         }
         Command::SetMolecule { molecule } => {
             state.domain.chemical_spec.molecule = molecule;
@@ -165,7 +210,12 @@ pub fn reduce(mut state: AppState, command: Command) -> AppState {
     state
 }
 
-fn set_bond_length(molecule: &mut Molecule, atom_ids: [u32; 2], length: f64, mode: GeometryEditMode) {
+fn set_bond_length(
+    molecule: &mut Molecule,
+    atom_ids: [u32; 2],
+    length: f64,
+    mode: GeometryEditMode,
+) {
     if !length.is_finite() || length <= 0.0 {
         return;
     }
@@ -226,7 +276,12 @@ fn set_bond_angle(molecule: &mut Molecule, atom_ids: [u32; 3], angle: f64, mode:
     apply_angle_motion(molecule, atom_ids[1], atom_ids[0], atom_ids[2], delta, mode);
 }
 
-fn set_dihedral_angle(molecule: &mut Molecule, atom_ids: [u32; 4], angle: f64, mode: GeometryEditMode) {
+fn set_dihedral_angle(
+    molecule: &mut Molecule,
+    atom_ids: [u32; 4],
+    angle: f64,
+    mode: GeometryEditMode,
+) {
     if !angle.is_finite() {
         return;
     }
@@ -255,24 +310,46 @@ fn set_dihedral_angle(molecule: &mut Molecule, atom_ids: [u32; 4], angle: f64, m
     apply_length_or_dihedral_motion(molecule, atom_ids[1], atom_ids[2], delta_vec, mode);
 }
 
-fn apply_length_or_dihedral_motion(molecule: &mut Molecule, first_atom: u32, second_atom: u32, delta: [f64; 3], mode: GeometryEditMode) {
+fn apply_length_or_dihedral_motion(
+    molecule: &mut Molecule,
+    first_atom: u32,
+    second_atom: u32,
+    delta: [f64; 3],
+    mode: GeometryEditMode,
+) {
     match mode {
         GeometryEditMode::AtomOnly => {
             if let Some(second_idx) = atom_index(molecule, second_atom) {
-                molecule.atoms[second_idx].position = add(molecule.atoms[second_idx].position, delta);
+                molecule.atoms[second_idx].position =
+                    add(molecule.atoms[second_idx].position, delta);
             }
         }
         GeometryEditMode::MoveOtherSide => {
-            let Some(moving_ids) = connected_component_without_bond(molecule, second_atom, first_atom, [first_atom, second_atom]) else {
+            let Some(moving_ids) = connected_component_without_bond(
+                molecule,
+                second_atom,
+                first_atom,
+                [first_atom, second_atom],
+            ) else {
                 return;
             };
             translate_atoms(molecule, &moving_ids, delta);
         }
         GeometryEditMode::MoveBothSides => {
-            let Some(second_side) = connected_component_without_bond(molecule, second_atom, first_atom, [first_atom, second_atom]) else {
+            let Some(second_side) = connected_component_without_bond(
+                molecule,
+                second_atom,
+                first_atom,
+                [first_atom, second_atom],
+            ) else {
                 return;
             };
-            let Some(first_side) = connected_component_without_bond(molecule, first_atom, second_atom, [first_atom, second_atom]) else {
+            let Some(first_side) = connected_component_without_bond(
+                molecule,
+                first_atom,
+                second_atom,
+                [first_atom, second_atom],
+            ) else {
                 return;
             };
             translate_atoms(molecule, &second_side, scale(delta, 0.5));
@@ -281,24 +358,47 @@ fn apply_length_or_dihedral_motion(molecule: &mut Molecule, first_atom: u32, sec
     }
 }
 
-fn apply_angle_motion(molecule: &mut Molecule, center_atom: u32, fixed_atom: u32, moving_atom: u32, delta: [f64; 3], mode: GeometryEditMode) {
+fn apply_angle_motion(
+    molecule: &mut Molecule,
+    center_atom: u32,
+    fixed_atom: u32,
+    moving_atom: u32,
+    delta: [f64; 3],
+    mode: GeometryEditMode,
+) {
     match mode {
         GeometryEditMode::AtomOnly => {
             if let Some(moving_idx) = atom_index(molecule, moving_atom) {
-                molecule.atoms[moving_idx].position = add(molecule.atoms[moving_idx].position, delta);
+                molecule.atoms[moving_idx].position =
+                    add(molecule.atoms[moving_idx].position, delta);
             }
         }
         GeometryEditMode::MoveOtherSide => {
-            let Some(moving_ids) = connected_component_without_bond(molecule, moving_atom, center_atom, [center_atom, moving_atom]) else {
+            let Some(moving_ids) = connected_component_without_bond(
+                molecule,
+                moving_atom,
+                center_atom,
+                [center_atom, moving_atom],
+            ) else {
                 return;
             };
             translate_atoms(molecule, &moving_ids, delta);
         }
         GeometryEditMode::MoveBothSides => {
-            let Some(moving_side) = connected_component_without_bond(molecule, moving_atom, center_atom, [center_atom, moving_atom]) else {
+            let Some(moving_side) = connected_component_without_bond(
+                molecule,
+                moving_atom,
+                center_atom,
+                [center_atom, moving_atom],
+            ) else {
                 return;
             };
-            let Some(fixed_side) = connected_component_without_bond(molecule, fixed_atom, center_atom, [center_atom, fixed_atom]) else {
+            let Some(fixed_side) = connected_component_without_bond(
+                molecule,
+                fixed_atom,
+                center_atom,
+                [center_atom, fixed_atom],
+            ) else {
                 return;
             };
             translate_atoms(molecule, &moving_side, scale(delta, 0.5));
@@ -315,7 +415,12 @@ fn translate_atoms(molecule: &mut Molecule, atom_ids: &[u32], delta: [f64; 3]) {
     }
 }
 
-fn connected_component_without_bond(molecule: &Molecule, start: u32, blocked: u32, blocked_bond: [u32; 2]) -> Option<Vec<u32>> {
+fn connected_component_without_bond(
+    molecule: &Molecule,
+    start: u32,
+    blocked: u32,
+    blocked_bond: [u32; 2],
+) -> Option<Vec<u32>> {
     use std::collections::{HashSet, VecDeque};
     let mut visited: HashSet<u32> = HashSet::new();
     let mut queue = VecDeque::new();
@@ -397,7 +502,7 @@ fn place_template(molecule: &mut Molecule, name: &str, position: [f64; 3], _dire
     let Some(mut template) = templates::get_template(name) else {
         return;
     };
-    
+
     let base_id = next_atom_id(molecule).saturating_sub(1);
     let bond_base_id = next_bond_id(molecule).saturating_sub(1);
 
@@ -455,8 +560,15 @@ fn attach_fragment(
     let Some(port_atom_id) = fragment
         .attach_ports
         .iter()
-        .filter_map(|p| if let crate::domain::PortType::Atom { target_id } = p.port_type { Some(target_id) } else { None })
-        .next() else {
+        .filter_map(|p| {
+            if let crate::domain::PortType::Atom { target_id } = p.port_type {
+                Some(target_id)
+            } else {
+                None
+            }
+        })
+        .next()
+    else {
         return;
     };
 
@@ -475,10 +587,9 @@ fn attach_fragment(
     let mut template_atoms = template.atoms;
     template_atoms.retain(|a| a.id != port_atom_id);
 
-    
     // Shift atoms
     let shift = sub(target_pos, port_atom_pos);
-    
+
     for atom in &mut template_atoms {
         atom.position = add(atom.position, shift);
     }
@@ -497,8 +608,34 @@ fn attach_fragment(
 
     molecule.atoms.extend(template_atoms);
     molecule.bonds.extend(template.bonds);
-    
+
     add_bond(molecule, [target_atom_id, port_atom_id + base_id], 1);
+}
+
+pub fn infer_substitute_by_fragment_completion(
+    molecule: &Molecule,
+    selected_atom_id: u32,
+) -> Option<SubstituteByFragmentCompletion> {
+    let mut connected_bonds = molecule
+        .bonds
+        .iter()
+        .filter(|bond| bond.atom_ids.contains(&selected_atom_id));
+
+    let bond = connected_bonds.next()?;
+    if connected_bonds.next().is_some() {
+        return None;
+    }
+
+    let neighbor_atom_id = if bond.atom_ids[0] == selected_atom_id {
+        bond.atom_ids[1]
+    } else {
+        bond.atom_ids[0]
+    };
+
+    Some(SubstituteByFragmentCompletion {
+        start_atom_id: selected_atom_id,
+        end_atom_id: neighbor_atom_id,
+    })
 }
 
 pub fn substitute_by_fragment(
@@ -510,8 +647,6 @@ pub fn substitute_by_fragment(
     use std::collections::{HashMap, HashSet};
 
     let fragments = crate::fragments::list_available_fragments();
-    println!("substitute by fragment");
-    println!("{:?}, {:?}", fragments, fragment_name);
 
     let Some(fragment) = fragments.iter().find(|f| f.name == fragment_name) else {
         return;
@@ -522,38 +657,34 @@ pub fn substitute_by_fragment(
     };
 
     // ------------------------------------------------------------
-    // Find target bond A(start) -- B(end)
+    // Find target bond A(start/consumed) -- B(end/retained)
     // ------------------------------------------------------------
 
-    let Some(target_bond_index) = molecule.bonds.iter().position(|b|
+    let Some(target_bond_index) = molecule.bonds.iter().position(|b| {
         (b.atom_ids[0] == start_atom_id && b.atom_ids[1] == end_atom_id)
             || (b.atom_ids[0] == end_atom_id && b.atom_ids[1] == start_atom_id)
-    ) else {
+    }) else {
         return;
     };
 
     // ------------------------------------------------------------
     // Find fragment port bond X -- Y
     //
-    // consumed_atom = X
-    // retained_atom = Y
+    // retained_atom = X
+    // consumed_atom = Y
     // ------------------------------------------------------------
 
-    let Some((consumed_atom_id, retained_atom_id)) = fragment
-        .attach_ports
-        .iter()
-        .find_map(|p| {
-            if let crate::domain::PortType::Bond {
-                start_atom_id,
-                end_atom_id,
-            } = p.port_type
-            {
-                Some((start_atom_id, end_atom_id))
-            } else {
-                None
-            }
-        })
-    else {
+    let Some((consumed_atom_id, retained_atom_id)) = fragment.attach_ports.iter().find_map(|p| {
+        if let crate::domain::PortType::Bond {
+            start_atom_id,
+            end_atom_id,
+        } = p.port_type
+        {
+            Some((end_atom_id, start_atom_id))
+        } else {
+            None
+        }
+    }) else {
         return;
     };
 
@@ -561,11 +692,11 @@ pub fn substitute_by_fragment(
     // Get positions
     // ------------------------------------------------------------
 
-    let Some(target_start_pos) = atom_position(molecule, start_atom_id) else {
+    let Some(target_consumed_pos) = atom_position(molecule, start_atom_id) else {
         return;
     };
 
-    let Some(target_end_pos) = atom_position(molecule, end_atom_id) else {
+    let Some(target_retained_pos) = atom_position(molecule, end_atom_id) else {
         return;
     };
 
@@ -591,13 +722,15 @@ pub fn substitute_by_fragment(
     // Build transform
     //
     // Align:
-    // consumed -> retained
+    // retained -> consumed
     // to
-    // target_start -> target_end
+    // target_consumed -> target_retained
     // ------------------------------------------------------------
 
-    let target_vec = normalize(sub(target_end_pos, target_start_pos)).expect("target bond must be valid");
-    let fragment_vec = normalize(sub(retained_pos, consumed_pos)).expect("fragment bond must be valid");
+    let target_vec = normalize(sub(target_consumed_pos, target_retained_pos))
+        .expect("target bond must be valid");
+    let fragment_vec =
+        normalize(sub(retained_pos, consumed_pos)).expect("fragment bond must be valid");
 
     let rotation = rotation_from_to(fragment_vec, target_vec);
 
@@ -610,7 +743,7 @@ pub fn substitute_by_fragment(
         atom.position = add(rotated, consumed_pos);
     }
 
-    // Translate consumed atom onto target_start
+    // Translate consumed atom onto target consumed atom
     let transformed_consumed_pos = template
         .atoms
         .iter()
@@ -618,7 +751,7 @@ pub fn substitute_by_fragment(
         .map(|a| a.position)
         .unwrap_or(consumed_pos);
 
-    let shift = sub(target_start_pos, transformed_consumed_pos);
+    let shift = sub(target_retained_pos, transformed_consumed_pos);
 
     for atom in &mut template.atoms {
         atom.position = add(atom.position, shift);
@@ -661,9 +794,8 @@ pub fn substitute_by_fragment(
         let a = bond.atom_ids[0];
         let b = bond.atom_ids[1];
 
-        let is_port_bond =
-            (a == consumed_atom_id && b == retained_atom_id)
-                || (a == retained_atom_id && b == consumed_atom_id);
+        let is_port_bond = (a == consumed_atom_id && b == retained_atom_id)
+            || (a == retained_atom_id && b == consumed_atom_id);
 
         if is_port_bond {
             continue;
@@ -700,7 +832,7 @@ pub fn substitute_by_fragment(
     // ------------------------------------------------------------
     // Create new bond:
     //
-    // A -- retained(fragment)
+    // B -- retained(fragment)
     // ------------------------------------------------------------
 
     let Some(&mapped_retained_atom) = mapping.get(&retained_atom_id) else {
@@ -709,20 +841,19 @@ pub fn substitute_by_fragment(
 
     molecule.bonds.push(Bond {
         id: next_bond,
-        atom_ids: [start_atom_id, mapped_retained_atom],
+        atom_ids: [end_atom_id, mapped_retained_atom],
         order: 1,
     });
 
     // ------------------------------------------------------------
-    // Remove target end atom B
+    // Remove target start atom A
     // ------------------------------------------------------------
 
-    let removed_atom_id = end_atom_id;
+    let removed_atom_id = start_atom_id;
 
-    molecule.bonds.retain(|b| {
-        b.atom_ids[0] != removed_atom_id
-            && b.atom_ids[1] != removed_atom_id
-    });
+    molecule
+        .bonds
+        .retain(|b| b.atom_ids[0] != removed_atom_id && b.atom_ids[1] != removed_atom_id);
 
     molecule.atoms.retain(|a| a.id != removed_atom_id);
 
@@ -737,9 +868,7 @@ pub fn substitute_by_fragment(
         .flat_map(|b| [b.atom_ids[0], b.atom_ids[1]])
         .collect();
 
-    molecule
-        .atoms
-        .retain(|a| connected.contains(&a.id));
+    molecule.atoms.retain(|a| connected.contains(&a.id));
 }
 
 #[cfg(test)]
@@ -768,7 +897,8 @@ mod tests {
             command,
             Command::SetBondLength {
                 atom_ids: [1, 2],
-                length
+                length,
+                ..
             } if (length - 1.42).abs() < 1e-12
         ));
     }
@@ -891,7 +1021,10 @@ mod tests {
         );
         let molecule = &state.domain.chemical_spec.molecule;
         assert_eq!(molecule.atoms.len(), 3 + 5); // 3 original + 5 from methane
-        assert!(molecule.atoms.iter().any(|a| a.element == Element::C && a.position == [10.0, 0.0, 0.0]));
+        assert!(molecule
+            .atoms
+            .iter()
+            .any(|a| a.element == Element::C && a.position == [10.0, 0.0, 0.0]));
     }
 
     #[test]
@@ -904,17 +1037,60 @@ mod tests {
             state,
             Command::SubstituteByFragment {
                 fragment_name: "methyl".to_string(),
-                start_atom_id: 1, // Bond between 1 and 2
-                end_atom_id: 2,
+                start_atom_id: 2, // Replace atom 2, keep atom 1
+                end_atom_id: 1,
             },
         );
         let molecule = &state.domain.chemical_spec.molecule;
 
         // Original bonds were: 1-2, 1-3. After substitution:
-        // Bond 1-2 removed (length 1).
+        // Bond 1-2 is removed.
         // New bonds from fragment added.
         // Need to verify bond 1-2 is gone.
-        assert!(molecule.bonds.iter().all(|b| !(b.atom_ids[0] == 1 && b.atom_ids[1] == 2) && !(b.atom_ids[0] == 2 && b.atom_ids[1] == 1)));
+        assert!(molecule
+            .bonds
+            .iter()
+            .all(|b| !(b.atom_ids[0] == 1 && b.atom_ids[1] == 2)
+                && !(b.atom_ids[0] == 2 && b.atom_ids[1] == 1)));
         assert_eq!(molecule.atoms.len(), 3 - 1 + 5 - 1); // 3 original + 5 from methane
+    }
+
+    #[test]
+    fn substitute_by_fragment_removes_deleted_atom_from_selection() {
+        let state = reduce(
+            initial_app_state(),
+            Command::ToggleAtomSelection { atom_id: 1 },
+        );
+        let state = reduce(state, Command::ToggleAtomSelection { atom_id: 2 });
+        let state = reduce(
+            state,
+            Command::SubstituteByFragment {
+                fragment_name: "methyl".to_string(),
+                start_atom_id: 2,
+                end_atom_id: 1,
+            },
+        );
+
+        assert_eq!(state.ui.selected_atoms, vec![1]);
+    }
+
+    #[test]
+    fn infer_substitute_by_fragment_completion_uses_selected_atom_as_start_atom() {
+        let molecule = initial_app_state().domain.chemical_spec.molecule;
+
+        assert_eq!(
+            infer_substitute_by_fragment_completion(&molecule, 2),
+            Some(SubstituteByFragmentCompletion {
+                start_atom_id: 2,
+                end_atom_id: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn infer_substitute_by_fragment_completion_rejects_ambiguous_single_atom() {
+        let molecule = initial_app_state().domain.chemical_spec.molecule;
+
+        assert_eq!(infer_substitute_by_fragment_completion(&molecule, 1), None);
     }
 }

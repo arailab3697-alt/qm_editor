@@ -94,9 +94,16 @@ pub fn rotation_from_to(from: [f64; 3], to: [f64; 3]) -> [[f64; 3]; 3] {
         return [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     }
 
-    let vx = [[0.0, -axis[2], axis[1]], [axis[2], 0.0, -axis[0]], [-axis[1], axis[0], 0.0]];
+    let vx = [
+        [0.0, -axis[2], axis[1]],
+        [axis[2], 0.0, -axis[0]],
+        [-axis[1], axis[0], 0.0],
+    ];
     let vx2 = mat_mul(vx, vx);
-    add_mat([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], add_mat(vx, scale_mat(vx2, (1.0 - c) / s.powi(2))))
+    add_mat(
+        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        add_mat(vx, scale_mat(vx2, (1.0 - c) / s.powi(2))),
+    )
 }
 
 pub fn rotate_vec(rotation: [[f64; 3]; 3], v: [f64; 3]) -> [f64; 3] {

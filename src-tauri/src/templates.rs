@@ -36,7 +36,7 @@ pub fn get_template_definition(name: &str) -> Option<TemplateDefinition> {
 pub fn list_available_templates() -> Vec<TemplateSummary> {
     let mut templates = Vec::new();
     let dir = Path::new("templates");
-    
+
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             if let Some(content) = fs::read_to_string(entry.path()).ok() {

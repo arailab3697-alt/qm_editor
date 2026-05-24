@@ -155,7 +155,10 @@ pub enum PortType {
     #[serde(rename_all = "camelCase")]
     Atom { target_id: u32 },
     #[serde(rename_all = "camelCase")]
-    Bond { start_atom_id: u32, end_atom_id: u32 },
+    Bond {
+        start_atom_id: u32,
+        end_atom_id: u32,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -288,6 +291,13 @@ pub struct ValidationMessage {
     pub message: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SubstituteByFragmentCompletion {
+    pub start_atom_id: u32,
+    pub end_atom_id: u32,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtomSummary {
@@ -328,6 +338,14 @@ pub struct AiContext {
 #[serde(rename_all = "camelCase")]
 pub struct AiResult {
     pub commands: Vec<Command>,
+    pub explanation: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiProposal {
+    pub commands: Vec<Command>,
+    pub resolved_commands: Vec<Command>,
     pub explanation: String,
 }
 

@@ -11,7 +11,7 @@
     },
     {
       "id": "bond1",
-      "portType": { "bond": { "startAtomId": 2, "endAtomId": 1 } },
+      "portType": { "bond": { "startAtomId": 1, "endAtomId": 2 } },
       "recommendedUsage": "SUBSTITUTE"
     }
   ]

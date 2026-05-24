@@ -1,6 +1,9 @@
-use crate::domain::{AiContext, AiResult, Command, GeometryEditMode, Method, JobType, Basis, Solvent, AtomSummary, CalculationSummary, AtomIndexMapEntry, atom_index, atom_position};
+use crate::domain::{
+    atom_index, atom_position, AiContext, AiResult, AtomIndexMapEntry, AtomSummary, Basis,
+    CalculationSummary, Command, GeometryEditMode, JobType, Method, Solvent,
+};
 use crate::gaussian::method_name;
-use crate::geometry::{dihedral_degrees, sub, rotate};
+use crate::geometry::{dihedral_degrees, rotate, sub};
 
 pub fn build_ai_context(state: &crate::domain::AppState) -> AiContext {
     let molecule = &state.domain.chemical_spec.molecule;
@@ -48,6 +51,40 @@ pub fn build_ai_context(state: &crate::domain::AppState) -> AiContext {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reducer;
+
+    #[test]
+    fn local_geometry_rule_outputs_display_atom_ids() {
+        let mut state = reducer::initial_app_state();
+        state.domain.chemical_spec.molecule.atoms[0].id = 10;
+        state.domain.chemical_spec.molecule.atoms[1].id = 20;
+        state.ui.selected_atoms = vec![10, 20];
+        let context = build_ai_context(&state);
+
+        let result = propose_commands_by_rules("set bond length 1.42", &context);
+
+        assert!(matches!(
+            result.commands.as_slice(),
+            [Command::SetBondLength {
+                atom_ids: [1, 2],
+                ..
+            }]
+        ));
+        let resolved =
+            resolve_atom_references(result.commands, &context).expect("ids should resolve");
+        assert!(matches!(
+            resolved.as_slice(),
+            [Command::SetBondLength {
+                atom_ids: [10, 20],
+                ..
+            }]
+        ));
+    }
+}
+
 pub fn propose_commands_by_rules(input: &str, context: &AiContext) -> AiResult {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -73,39 +110,53 @@ pub fn propose_commands_by_rules(input: &str, context: &AiContext) -> AiResult {
     // Tokenize after 'set'
     let content = &normalized[3..].trim();
     let tokens: Vec<&str> = content.split_whitespace().collect();
-    
+
     let mut commands = Vec::new();
 
     for token in tokens {
         if token.contains("b3lyp") {
-            commands.push(Command::SetMethod { method: Method::B3LYP });
+            commands.push(Command::SetMethod {
+                method: Method::B3LYP,
+            });
         } else if token.contains("wb97xd") {
-            commands.push(Command::SetMethod { method: Method::WB97XD });
+            commands.push(Command::SetMethod {
+                method: Method::WB97XD,
+            });
         } else if token.contains("6-31g(d)") {
-            commands.push(Command::SetBasis { basis: Basis::Six31Gd });
+            commands.push(Command::SetBasis {
+                basis: Basis::Six31Gd,
+            });
         } else if token.contains("def2-svp") {
-            commands.push(Command::SetBasis { basis: Basis::Def2Svp });
+            commands.push(Command::SetBasis {
+                basis: Basis::Def2Svp,
+            });
         } else if token.contains("def2-tzvp") {
-            commands.push(Command::SetBasis { basis: Basis::Def2Tzvp });
+            commands.push(Command::SetBasis {
+                basis: Basis::Def2Tzvp,
+            });
         } else if token.contains("thf") {
-            commands.push(Command::SetSolvent { solvent: Some(Solvent::THF) });
+            commands.push(Command::SetSolvent {
+                solvent: Some(Solvent::THF),
+            });
         } else if token.contains("water") {
-            commands.push(Command::SetSolvent { solvent: Some(Solvent::Water) });
+            commands.push(Command::SetSolvent {
+                solvent: Some(Solvent::Water),
+            });
         } else if token.contains("no_solvent") || token.contains("gas_phase") {
             commands.push(Command::SetSolvent { solvent: None });
         } else if let Some(job_type) = infer_job_type_by_rules(token) {
             commands.push(Command::SetJobType { job_type });
         } else if let Some(charge) = parse_kv_by_rules(token, "charge") {
             commands.push(Command::SetCharge { charge });
-        } else if let Some(mult) = parse_kv_by_rules(token, "multiplicity")
-            .or_else(|| parse_kv_by_rules(token, "mult"))
+        } else if let Some(mult) =
+            parse_kv_by_rules(token, "multiplicity").or_else(|| parse_kv_by_rules(token, "mult"))
         {
             if let Ok(multiplicity) = u32::try_from(mult) {
                 commands.push(Command::SetMultiplicity { multiplicity });
             }
         }
     }
-    
+
     // Geometry commands might span multiple tokens, handled separately if not strictly positional
     if let Some(command) = infer_geometry_command_by_rules(&normalized, context) {
         commands.push(command);
@@ -126,12 +177,13 @@ pub fn propose_commands_by_rules(input: &str, context: &AiContext) -> AiResult {
 
 fn parse_kv_by_rules(token: &str, keyword: &str) -> Option<i32> {
     if token.starts_with(keyword) {
-        let val = token.trim_start_matches(keyword).trim_matches(|c| c == ':' || c == '=');
+        let val = token
+            .trim_start_matches(keyword)
+            .trim_matches(|c| c == ':' || c == '=');
         return val.parse::<i32>().ok();
     }
     None
 }
-
 
 pub fn parse_ai_result_json(text: &str) -> Result<AiResult, String> {
     let parsed = serde_json::from_str::<AiResult>(text).map_err(|error| error.to_string())?;
@@ -174,15 +226,12 @@ fn parse_json_ai_result(text: &str) -> Option<AiResult> {
 // }
 
 fn infer_job_type_by_rules(text: &str) -> Option<JobType> {
-    if text.contains("transition state")
-        || text.split_whitespace().any(|token| token == "ts")
-    {
+    if text.contains("transition state") || text.split_whitespace().any(|token| token == "ts") {
         return Some(JobType::Ts);
     }
 
-    let has_opt = text.contains("opt")
-        || text.contains("optimize")
-        || text.contains("optimization");
+    let has_opt =
+        text.contains("opt") || text.contains("optimize") || text.contains("optimization");
     let has_freq = text.contains("freq") || text.contains("frequency");
     match (has_opt, has_freq) {
         (true, true) => Some(JobType::OptFreq),
@@ -197,18 +246,14 @@ fn parse_number_after_by_rules(text: &str, keyword: &str) -> Option<i32> {
     for (index, word) in words.iter().enumerate() {
         if *word == keyword {
             let next = words.get(index + 1)?;
-            let numeric = next.trim_matches(|char: char| {
-                char == ':' || char == '=' || char == ','
-            });
+            let numeric = next.trim_matches(|char: char| char == ':' || char == '=' || char == ',');
             if let Ok(value) = numeric.parse::<i32>() {
                 return Some(value);
             }
         }
 
         if let Some(rest) = word.strip_prefix(keyword) {
-            let numeric = rest.trim_matches(|char: char| {
-                char == ':' || char == '=' || char == ','
-            });
+            let numeric = rest.trim_matches(|char: char| char == ':' || char == '=' || char == ',');
             if !numeric.is_empty() {
                 if let Ok(value) = numeric.parse::<i32>() {
                     return Some(value);
@@ -224,30 +269,24 @@ fn infer_geometry_command_by_rules(text: &str, context: &AiContext) -> Option<Co
     let selected = context
         .selected_atoms
         .iter()
-        .filter_map(|atom| display_index_to_atom_id(context, atom.display_index))
+        .map(|atom| atom.display_index)
         .collect::<Vec<_>>();
 
-    if (text.contains("dihedral") || text.contains("torsion"))
-        && selected.len() >= 4
-    {
+    if (text.contains("dihedral") || text.contains("torsion")) && selected.len() >= 4 {
         return Some(Command::SetDihedralAngle {
             atom_ids: [selected[0], selected[1], selected[2], selected[3]],
             angle: value,
             mode: GeometryEditMode::AtomOnly,
         });
     }
-    if (text.contains("bond angle") || text.contains("angle"))
-        && selected.len() >= 3
-    {
+    if (text.contains("bond angle") || text.contains("angle")) && selected.len() >= 3 {
         return Some(Command::SetBondAngle {
             atom_ids: [selected[0], selected[1], selected[2]],
             angle: value,
             mode: GeometryEditMode::AtomOnly,
         });
     }
-    if (text.contains("bond length") || text.contains("distance"))
-        && selected.len() >= 2
-    {
+    if (text.contains("bond length") || text.contains("distance")) && selected.len() >= 2 {
         return Some(Command::SetBondLength {
             atom_ids: [selected[0], selected[1]],
             length: value,
@@ -258,26 +297,44 @@ fn infer_geometry_command_by_rules(text: &str, context: &AiContext) -> Option<Co
     None
 }
 
-pub fn resolve_atom_references(commands: Vec<Command>, context: &AiContext) -> Result<Vec<Command>, String> {
+pub fn resolve_atom_references(
+    commands: Vec<Command>,
+    context: &AiContext,
+) -> Result<Vec<Command>, String> {
     commands
         .into_iter()
         .map(|command| resolve_command_atom_references(command, context))
         .collect()
 }
 
-fn resolve_command_atom_references(command: Command, context: &AiContext) -> Result<Command, String> {
+fn resolve_command_atom_references(
+    command: Command,
+    context: &AiContext,
+) -> Result<Command, String> {
     let resolved = match command {
-        Command::SetBondLength { atom_ids, length, mode } => Command::SetBondLength {
+        Command::SetBondLength {
+            atom_ids,
+            length,
+            mode,
+        } => Command::SetBondLength {
             atom_ids: resolve_pair(atom_ids, context)?,
             length,
             mode,
         },
-        Command::SetBondAngle { atom_ids, angle, mode } => Command::SetBondAngle {
+        Command::SetBondAngle {
+            atom_ids,
+            angle,
+            mode,
+        } => Command::SetBondAngle {
             atom_ids: resolve_triplet(atom_ids, context)?,
             angle,
             mode,
         },
-        Command::SetDihedralAngle { atom_ids, angle, mode } => Command::SetDihedralAngle {
+        Command::SetDihedralAngle {
+            atom_ids,
+            angle,
+            mode,
+        } => Command::SetDihedralAngle {
             atom_ids: resolve_quartet(atom_ids, context)?,
             angle,
             mode,
@@ -362,18 +419,17 @@ fn parse_geometry_value_by_rules(text: &str) -> Option<f64> {
         )
     })
     .filter_map(|part| {
-        let trimmed = part.trim_matches(|char: char| {
-            matches!(char, 'a' | 'A' | '°' | 'Å' | 'Å')
-        });
+        let trimmed = part.trim_matches(|char: char| matches!(char, 'a' | 'A' | '°' | 'Å' | 'Å'));
         if trimmed.is_empty() {
             return None;
         }
         // Handle cases like "1.42オングストローム"
-        let numeric_part = if let Some(index) = trimmed.find(|c: char| !c.is_ascii_digit() && c != '.') {
-            &trimmed[..index]
-        } else {
-            trimmed
-        };
+        let numeric_part =
+            if let Some(index) = trimmed.find(|c: char| !c.is_ascii_digit() && c != '.') {
+                &trimmed[..index]
+            } else {
+                trimmed
+            };
         numeric_part.parse::<f64>().ok()
     })
     .last()

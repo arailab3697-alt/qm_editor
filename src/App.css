@@ -51,13 +51,23 @@ button:disabled {
   gap: 16px;
   min-height: 100vh;
   padding: 18px;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
-.topbar {
+.tool-shell {
+  background: #ffffff;
+  border: 1px solid #d4dae2;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.tool-head {
   align-items: center;
   display: flex;
-  justify-content: space-between;
   gap: 16px;
+  justify-content: space-between;
 }
 
 .eyebrow {
@@ -88,11 +98,18 @@ h2 {
 .workspace {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  min-height: 0;
+}
+
+.left-workspace {
+  display: grid;
+  gap: 16px;
+  grid-template-rows: minmax(330px, 1fr) minmax(220px, 0.55fr);
+  min-height: 0;
 }
 
 .viewer-panel,
-.form-panel,
 .preview-panel,
 .assistant-panel {
   background: #ffffff;
@@ -102,13 +119,20 @@ h2 {
 }
 
 .viewer-panel,
-.form-panel,
 .assistant-panel {
   padding: 14px;
 }
 
 .preview-panel {
+  min-height: 0;
   overflow: hidden;
+}
+
+.assistant-panel {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .panel-heading {
@@ -154,55 +178,87 @@ h2 {
 }
 
 .molecule-canvas {
-  aspect-ratio: 16 / 10;
   background: #f8fafc;
   border: 1px solid #dde3ea;
   border-radius: 6px;
   display: block;
+  height: calc(100% - 46px);
   min-height: 320px;
   overflow: hidden;
   position: relative;
   width: 100%;
 }
 
-.form-grid {
+.toolbar {
   display: grid;
   gap: 12px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns:
+    minmax(310px, 1.05fr)
+    minmax(310px, 1fr)
+    minmax(330px, 1.05fr)
+    minmax(380px, 1.15fr)
+    minmax(190px, 0.45fr);
 }
 
-.geometry-editor {
+.toolbar-section {
   border-top: 1px solid #d4dae2;
   display: grid;
   gap: 10px;
-  margin-top: 14px;
-  padding-top: 14px;
+  min-width: 0;
+  padding-top: 12px;
 }
 
-.molecule-editor {
-  border-top: 1px solid #d4dae2;
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
-  padding-top: 14px;
+.toolbar-section.calculation-tools {
+  border-top: 0;
+  padding-top: 0;
 }
 
-.geometry-heading {
+.tool-section-heading {
   align-items: baseline;
   display: flex;
   gap: 10px;
   justify-content: space-between;
 }
 
-.geometry-heading h3 {
+.tool-section-heading h3 {
   font-size: 14px;
   line-height: 1.2;
   margin: 0;
 }
 
-.geometry-heading span {
+.tool-section-heading span {
   color: #647181;
   font-size: 12px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.geometry-editor {
+  border-left: 1px solid #d4dae2;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 12px;
+}
+
+.molecule-editor {
+  border-left: 1px solid #d4dae2;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 12px;
+}
+
+.template-fragment-tools {
+  border-left: 1px solid #d4dae2;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 12px;
 }
 
 .geometry-grid {
@@ -216,18 +272,31 @@ h2 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.template-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(120px, 1.4fr) repeat(3, minmax(62px, 0.8fr));
+}
+
 .editor-actions,
-.bond-actions {
+.bond-actions,
+.fragment-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.bond-actions {
+.bond-actions,
+.fragment-actions {
   align-items: end;
 }
 
 .bond-actions label {
   min-width: 108px;
+}
+
+.fragment-actions label {
+  min-width: 150px;
 }
 
 .inline-field {
@@ -312,7 +381,8 @@ textarea {
 .preview-panel pre {
   background: #172033;
   color: #edf2f7;
-  min-height: 230px;
+  height: calc(100% - 45px);
+  min-height: 180px;
   padding: 16px;
 }
 
@@ -337,6 +407,14 @@ textarea {
   padding-top: 12px;
 }
 
+.assistant-panel textarea {
+  flex: 0 0 auto;
+}
+
+.assistant-panel .ai-output {
+  min-height: 0;
+}
+
 .ai-output p {
   color: #425062;
   font-size: 13px;
@@ -356,13 +434,30 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .topbar {
+  .tool-head {
     align-items: stretch;
     flex-direction: column;
   }
 
   .import-control {
     align-items: flex-start;
+  }
+
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .geometry-editor,
+  .molecule-editor,
+  .template-fragment-tools {
+    border-left: 0;
+    border-top: 1px solid #d4dae2;
+    padding-left: 0;
+    padding-top: 12px;
+  }
+
+  .left-workspace {
+    grid-template-rows: auto auto;
   }
 }
 
@@ -372,20 +467,25 @@ textarea {
   }
 
   .form-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 
   .atom-editor-grid {
     grid-template-columns: 1fr 1fr;
   }
 
+  .template-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .editor-actions,
-  .bond-actions {
+  .bond-actions,
+  .fragment-actions {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .geometry-heading {
+  .tool-section-heading {
     align-items: flex-start;
     flex-direction: column;
   }

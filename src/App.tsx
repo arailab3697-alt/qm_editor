@@ -16,6 +16,23 @@ import {
   type ValidationMessage,
 } from "./domain/chemicalSpec";
 
+type TemplateSummary = {
+  name: string;
+  displayName: string;
+  description: string;
+};
+
+type FragmentSummary = {
+  name: string;
+  displayName: string;
+  description: string;
+};
+
+type SubstituteByFragmentCompletion = {
+  startAtomId: number;
+  endAtomId: number;
+};
+
 function App() {
   return <EditorShell />;
 }
@@ -48,28 +65,32 @@ function EditorShell() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Gaussian Input IDE</p>
-          <h1>DFT Input File Editor</h1>
+      <header className="tool-shell">
+        <div className="tool-head">
+          <div>
+            <p className="eyebrow">Gaussian Input IDE</p>
+            <h1>DFT Input File Editor</h1>
+          </div>
+          <ImportControl />
         </div>
-        <ImportControl />
+        <CalculationToolbar messages={messages} />
       </header>
 
-      <section className="workspace">
-        <MoleculeViewer />
-        <CalculationForm messages={messages} />
-      </section>
+      <section className="workspace" aria-label="Editor workspace">
+        <div className="left-workspace">
+          <MoleculeViewer />
 
-      <section className="preview-panel" aria-label="Gaussian input preview">
-        <div className="panel-heading">
-          <h2>Gaussian Input Preview</h2>
-          <span>{spec.molecule.atoms.length} atoms</span>
+          <section className="preview-panel" aria-label="GJF file preview">
+            <div className="panel-heading">
+              <h2>GJF Preview</h2>
+              <span>{spec.molecule.atoms.length} atoms</span>
+            </div>
+            <pre>{gaussian}</pre>
+          </section>
         </div>
-        <pre>{gaussian}</pre>
-      </section>
 
-      <AIAssistant />
+        <AIAssistant />
+      </section>
     </main>
   );
 }
@@ -124,27 +145,29 @@ function MoleculeViewer() {
     const viewer = viewerRef.current;
     viewer.removeAllModels();
     viewer.removeAllLabels();
-    viewer.addModel(moleculeToXyz(molecule), "xyz");
+    viewer.addModel(moleculeToMol(molecule), "mol");
     viewer.setStyle({}, { stick: { radius: 0.15 }, sphere: { scale: 0.34 } });
 
-    for (const atom of molecule.atoms) {
-      viewer.addLabel(atom.id.toString(), {
+    molecule.atoms.forEach((atom, index) => {
+      viewer.addLabel(String(index + 1), {
         position: { x: atom.position[0], y: atom.position[1], z: atom.position[2] },
         backgroundColor: "white",
         backgroundOpacity: 0.5,
         fontSize: 12,
         fontColor: "black",
       });
-    }
+    });
 
     for (const atomId of selected) {
+      const atomIndex = molecule.atoms.findIndex((atom) => atom.id === atomId);
+      if (atomIndex < 0) continue;
       viewer.setStyle(
-        { index: atomId - 1 },
+        { index: atomIndex },
         { stick: { radius: 0.2, color: "#c27a22" }, sphere: { scale: 0.46, color: "#f4b13d" } },
       );
     }
     viewer.setClickable({}, true, (atom: AtomSpec) => {
-      const atomId = atom.index === undefined ? atom.serial : atom.index + 1;
+      const atomId = atom.index === undefined ? undefined : molecule.atoms[atom.index]?.id;
       if (atomId !== undefined) void dispatchCommand({ type: "TOGGLE_ATOM_SELECTION", atomId });
     });
     viewer.zoomTo();
@@ -157,7 +180,7 @@ function MoleculeViewer() {
       <div className="panel-heading">
         <div>
           <h2>{molecule.name}</h2>
-          <p>{selected.length} selected</p>
+          <p>{formatSelectedDisplayAtoms(molecule, selected)}</p>
         </div>
         <button type="button" onClick={() => void dispatchCommand({ type: "CLEAR_SELECTION" })}>
           Clear
@@ -169,73 +192,77 @@ function MoleculeViewer() {
   );
 }
 
-function CalculationForm({ messages }: { messages: ValidationMessage[] }) {
+function CalculationToolbar({ messages }: { messages: ValidationMessage[] }) {
   const { state, dispatchCommand } = useAppStore();
   if (!state) return null;
   const calculation = state.domain.chemicalSpec.calculation;
 
   return (
-    <section className="form-panel" aria-label="Calculation form">
-      <div className="panel-heading">
-        <h2>Calculation</h2>
-      </div>
+    <section className="toolbar" aria-label="Editor toolbar">
+      <div className="toolbar-section calculation-tools">
+        <div className="tool-section-heading">
+          <h2>Calculation</h2>
+        </div>
 
-      <div className="form-grid">
-        <SelectField
-          label="Job type"
-          value={calculation.jobType}
-          options={supportedJobTypes}
-          onChange={(jobType) => void dispatchCommand({ type: "SET_JOB_TYPE", jobType })}
-        />
-        <SelectField
-          label="Method"
-          value={calculation.method}
-          options={supportedMethods}
-          onChange={(method) => void dispatchCommand({ type: "SET_METHOD", method })}
-        />
-        <SelectField
-          label="Basis"
-          value={calculation.basis}
-          options={supportedBases}
-          onChange={(basis) => void dispatchCommand({ type: "SET_BASIS", basis })}
-        />
-        <label>
-          Solvent
-          <select
-            value={calculation.solvent ?? ""}
-            onChange={(event) =>
-              void dispatchCommand({
-                type: "SET_SOLVENT",
-                solvent: event.currentTarget.value ? (event.currentTarget.value as Solvent) : undefined,
-              })
-            }
-          >
-            <option value="">Gas phase</option>
-            {supportedSolvents.map((solvent) => (
-              <option key={solvent} value={solvent}>
-                {solvent}
-              </option>
-            ))}
-          </select>
-        </label>
-        <NumberField
-          label="Charge"
-          value={calculation.charge}
-          onChange={(charge) => void dispatchCommand({ type: "SET_CHARGE", charge })}
-        />
-        <NumberField
-          label="Multiplicity"
-          min={1}
-          value={calculation.multiplicity}
-          onChange={(multiplicity) => void dispatchCommand({ type: "SET_MULTIPLICITY", multiplicity })}
-        />
+        <div className="form-grid">
+          <SelectField
+            label="Job type"
+            value={calculation.jobType}
+            options={supportedJobTypes}
+            onChange={(jobType) => void dispatchCommand({ type: "SET_JOB_TYPE", jobType })}
+          />
+          <SelectField
+            label="Method"
+            value={calculation.method}
+            options={supportedMethods}
+            onChange={(method) => void dispatchCommand({ type: "SET_METHOD", method })}
+          />
+          <SelectField
+            label="Basis"
+            value={calculation.basis}
+            options={supportedBases}
+            onChange={(basis) => void dispatchCommand({ type: "SET_BASIS", basis })}
+          />
+          <label>
+            Solvent
+            <select
+              value={calculation.solvent ?? ""}
+              onChange={(event) =>
+                void dispatchCommand({
+                  type: "SET_SOLVENT",
+                  solvent: event.currentTarget.value ? (event.currentTarget.value as Solvent) : undefined,
+                })
+              }
+            >
+              <option value="">Gas phase</option>
+              {supportedSolvents.map((solvent) => (
+                <option key={solvent} value={solvent}>
+                  {solvent}
+                </option>
+              ))}
+            </select>
+          </label>
+          <NumberField
+            label="Charge"
+            value={calculation.charge}
+            onChange={(charge) => void dispatchCommand({ type: "SET_CHARGE", charge })}
+          />
+          <NumberField
+            label="Multiplicity"
+            min={1}
+            value={calculation.multiplicity}
+            onChange={(multiplicity) => void dispatchCommand({ type: "SET_MULTIPLICITY", multiplicity })}
+          />
+        </div>
       </div>
 
       <MoleculeEditor />
 
+      <TemplateFragmentTools />
+
       <GeometryEditor />
 
-      <div className="validation-list">
+      <div className="validation-list toolbar-section">
         {messages.length === 0 ? (
           <p className="valid">Ready to render Gaussian input.</p>
         ) : (
@@ -286,7 +313,7 @@ function MoleculeEditor() {
 
   return (
     <div className="molecule-editor" aria-label="Molecule edit menu">
-      <div className="geometry-heading">
+      <div className="tool-section-heading">
         <h3>Molecule Edit</h3>
         <span>{molecule.bonds.length} bonds</span>
       </div>
@@ -343,6 +370,140 @@ function MoleculeEditor() {
   );
 }
 
+function TemplateFragmentTools() {
+  const { state, dispatchCommand } = useAppStore();
+  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [fragments, setFragments] = useState<FragmentSummary[]>([]);
+  const [templateName, setTemplateName] = useState("");
+  const [fragmentName, setFragmentName] = useState("");
+  const [x, setX] = useState("0");
+  const [y, setY] = useState("0");
+  const [z, setZ] = useState("0");
+  const [substitutionCompletion, setSubstitutionCompletion] = useState<SubstituteByFragmentCompletion | null>(null);
+
+  useEffect(() => {
+    void invoke<TemplateSummary[]>("list_available_templates_tauri").then((availableTemplates) => {
+      setTemplates(availableTemplates);
+      setTemplateName((current) => current || availableTemplates[0]?.name || "");
+    });
+    void invoke<FragmentSummary[]>("list_available_fragments_tauri").then((availableFragments) => {
+      setFragments(availableFragments);
+      setFragmentName((current) => current || availableFragments[0]?.name || "");
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!state || state.ui.selectedAtoms.length !== 1) {
+      setSubstitutionCompletion(null);
+      return;
+    }
+
+    const molecule = state.domain.chemicalSpec.molecule;
+    const selectedAtomId = state.ui.selectedAtoms[0];
+    void invoke<SubstituteByFragmentCompletion | null>("infer_substitute_by_fragment_completion_tauri", {
+      molecule,
+      selectedAtomId,
+    }).then(setSubstitutionCompletion);
+  }, [state]);
+
+  if (!state) return null;
+
+  const selected = state.ui.selectedAtoms;
+  const position = [Number(x), Number(y), Number(z)] as [number, number, number];
+  const canPlaceTemplate = Boolean(templateName) && position.every(Number.isFinite);
+  const canAttachFragment = Boolean(fragmentName) && selected.length >= 1;
+  const substitutionAtomIds =
+    selected.length >= 2
+      ? ({ startAtomId: selected[0], endAtomId: selected[1] } satisfies SubstituteByFragmentCompletion)
+      : substitutionCompletion;
+  const canSubstituteFragment = Boolean(fragmentName) && substitutionAtomIds !== null;
+
+  return (
+    <div className="template-fragment-tools" aria-label="Template and fragment tools">
+      <div className="tool-section-heading">
+        <h3>Templates / Fragments</h3>
+        <span>{formatSelectedDisplayAtoms(state.domain.chemicalSpec.molecule, selected)}</span>
+      </div>
+
+      <div className="template-grid">
+        <label>
+          Template
+          <select value={templateName} onChange={(event) => setTemplateName(event.currentTarget.value)}>
+            {templates.map((template) => (
+              <option key={template.name} value={template.name}>
+                {template.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <NumberTextField label="X" value={x} step="0.001" onChange={setX} />
+        <NumberTextField label="Y" value={y} step="0.001" onChange={setY} />
+        <NumberTextField label="Z" value={z} step="0.001" onChange={setZ} />
+      </div>
+
+      <div className="editor-actions">
+        <button
+          type="button"
+          disabled={!canPlaceTemplate}
+          onClick={() =>
+            void dispatchCommand({
+              type: "PLACE_TEMPLATE",
+              templateName,
+              position,
+              direction: [1, 0, 0],
+            })
+          }
+        >
+          Add Template
+        </button>
+      </div>
+
+      <div className="fragment-actions">
+        <label>
+          Fragment
+          <select value={fragmentName} onChange={(event) => setFragmentName(event.currentTarget.value)}>
+            {fragments.map((fragment) => (
+              <option key={fragment.name} value={fragment.name}>
+                {fragment.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={!canAttachFragment}
+          onClick={() =>
+            void dispatchCommand({
+              type: "ATTACH_FRAGMENT",
+              fragmentName,
+              targetAtomId: selected[0],
+              rotationAngle: 0,
+              orientation: [1, 0, 0],
+            })
+          }
+        >
+          Attach Fragment
+        </button>
+        <button
+          type="button"
+          disabled={!canSubstituteFragment}
+          onClick={() =>
+            substitutionAtomIds &&
+            void dispatchCommand({
+              type: "SUBSTITUTE_BY_FRAGMENT",
+              fragmentName,
+              startAtomId: substitutionAtomIds.startAtomId,
+              endAtomId: substitutionAtomIds.endAtomId,
+            })
+          }
+        >
+          Substitute Fragment
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function GeometryEditor() {
   const { state, dispatchCommand } = useAppStore();
   const [bondLength, setBondLength] = useState("");
@@ -370,7 +531,7 @@ function GeometryEditor() {
 
   return (
     <div className="geometry-editor" aria-label="Geometry edit menu">
-      <div className="geometry-heading">
+      <div className="tool-section-heading">
         <h3>Geometry Edit</h3>
         <span>Select 2, 3, or 4 atoms in order</span>
       </div>
@@ -398,7 +559,7 @@ function GeometryEditor() {
                 })
               }
             >
-              Apply
+              SetBondLength
             </button>
           </div>
         </label>
@@ -426,7 +587,7 @@ function GeometryEditor() {
                 })
               }
             >
-              Apply
+              SetBondAngle
             </button>
           </div>
         </label>
@@ -452,7 +613,7 @@ function GeometryEditor() {
                 })
               }
             >
-              Apply
+              SetDihedralAngle
             </button>
           </div>
         </label>
@@ -572,8 +733,8 @@ function AIAssistant() {
   }
 
   function applyAICommands() {
-    if (!result || result.commands.length === 0) return;
-    void applyCommands(result.commands);
+    if (!result || result.resolvedCommands.length === 0) return;
+    void applyCommands(result.resolvedCommands);
     setResult(null);
   }
 
@@ -595,7 +756,7 @@ function AIAssistant() {
         <button type="button" onClick={generateCommands} disabled={loading || !request.trim()}>
           {loading ? "Generating..." : "Generate Commands"}
         </button>
-        <button type="button" disabled={loading || !result || result.commands.length === 0} onClick={applyAICommands}>
+        <button type="button" disabled={loading || !result || result.resolvedCommands.length === 0} onClick={applyAICommands}>
           Apply Commands
         </button>
       </div>
@@ -625,6 +786,18 @@ function isOptionalInteger(value: string, min: number) {
   if (value === "") return true;
   const numeric = Number(value);
   return Number.isInteger(numeric) && numeric >= min;
+}
+
+function formatSelectedDisplayAtoms(molecule: Molecule, selectedAtomIds: number[]) {
+  if (selectedAtomIds.length === 0) return "No selection";
+  const displayIds = selectedAtomIds
+    .map((atomId) => {
+      const displayIndex = molecule.atoms.findIndex((atom) => atom.id === atomId);
+      return displayIndex < 0 ? undefined : displayIndex + 1;
+    })
+    .filter((displayIndex): displayIndex is number => displayIndex !== undefined);
+
+  return displayIds.length === 0 ? "No selection" : `Selected: ${displayIds.join(", ")}`;
 }
 
 function measureBondLength(molecule: Molecule, firstId: number, secondId: number) {
@@ -691,12 +864,38 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function moleculeToXyz(molecule: { name: string; atoms: { element: string; position: [number, number, number] }[] }) {
+function moleculeToMol(molecule: Molecule) {
+  const atomIndexById = new Map(molecule.atoms.map((atom, index) => [atom.id, index + 1]));
+  const bondLines = molecule.bonds
+    .map((bond) => {
+      const firstIndex = atomIndexById.get(bond.atomIds[0]);
+      const secondIndex = atomIndexById.get(bond.atomIds[1]);
+      if (firstIndex === undefined || secondIndex === undefined) return undefined;
+      return `${formatMolInteger(firstIndex, 3)}${formatMolInteger(secondIndex, 3)}${formatMolInteger(bond.order, 3)}  0  0  0  0`;
+    })
+    .filter((line): line is string => line !== undefined);
+
   return [
-    String(molecule.atoms.length),
     molecule.name,
-    ...molecule.atoms.map(({ element, position }) => `${element} ${position[0]} ${position[1]} ${position[2]}`),
+    "qm_editor",
+    "",
+    `${formatMolInteger(molecule.atoms.length, 3)}${formatMolInteger(bondLines.length, 3)}  0  0  0  0            999 V2000`,
+    ...molecule.atoms.map(({ element, position }) => {
+      const [x, y, z] = position;
+      return `${formatMolFloat(x)}${formatMolFloat(y)}${formatMolFloat(z)} ${element.padEnd(3, " ")} 0  0  0  0  0  0  0  0  0  0  0  0`;
+    }),
+    ...bondLines,
+    "M  END",
+    "",
   ].join("\n");
+}
+
+function formatMolFloat(value: number) {
+  return value.toFixed(4).padStart(10, " ");
+}
+
+function formatMolInteger(value: number, width: number) {
+  return String(value).padStart(width, " ");
 }
 
 export default App;

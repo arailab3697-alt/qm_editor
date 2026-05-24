@@ -34,6 +34,7 @@ export type AICommand = Exclude<
 
 export type AIResult = {
   commands: AICommand[];
+  resolvedCommands: AICommand[];
   explanation: string;
 };
 
@@ -65,8 +66,9 @@ export const aiResultSchema = {
   type: "object",
   properties: {
     commands: { type: "array", items: commandSchema },
+    resolvedCommands: { type: "array", items: commandSchema },
     explanation: { type: "string" },
   },
-  required: ["commands", "explanation"],
+  required: ["commands", "resolvedCommands", "explanation"],
   additionalProperties: false,
 } as const;
