@@ -1,0 +1,36 @@
+{
+  "name": "benzene",
+  "displayName": "Benzene",
+  "description": "The most basic aromatic ring(C6H6).",
+  "molecule": {
+    "name": "benzene",
+    "atoms": [
+      { "id": 1, "element": "C", "position": [-2.00, -2.88,  0.001] },
+      { "id": 2, "element": "C", "position": [-0.60, -2.88,  0.001] },
+      { "id": 3, "element": "C", "position": [ 0.08, -1.67,  0.001] },
+      { "id": 4, "element": "C", "position": [-0.60, -0.47,  0.000] },
+      { "id": 5, "element": "C", "position": [-2.00, -0.47,  0.000] },
+      { "id": 6, "element": "C", "position": [-2.70, -1.67,  0.000] },
+      { "id": 7, "element": "H", "position": [-2.55, -3.83,  0.002] },
+      { "id": 8, "element": "H", "position": [-0.05, -3.83,  0.002] },
+      { "id": 9, "element": "H", "position": [ 1.18, -1.67,  0.002] },
+      { "id": 10, "element": "H", "position": [-0.05,  0.48,  0.000] },
+      { "id": 11, "element": "H", "position": [-2.55,  0.48, -0.000] },
+      { "id": 12, "element": "H", "position": [-3.80, -1.67,  0.000] }
+    ],
+    "bonds": [
+      { "id": 1, "atomIds": [1, 2], "order": 1 },
+      { "id": 2, "atomIds": [2, 3], "order": 2 },
+      { "id": 3, "atomIds": [3, 4], "order": 1 },
+      { "id": 4, "atomIds": [4, 5], "order": 2 },
+      { "id": 5, "atomIds": [5, 6], "order": 1 },
+      { "id": 6, "atomIds": [6, 1], "order": 2 },
+      { "id": 7, "atomIds": [1, 7], "order": 1 },
+      { "id": 8, "atomIds": [2, 8], "order": 1 },
+      { "id": 9, "atomIds": [3, 9], "order": 1 },
+      { "id": 10, "atomIds": [4, 10], "order": 1 },
+      { "id": 11, "atomIds": [5, 11], "order": 1 },
+      { "id": 12, "atomIds": [6, 12], "order": 1 }
+    ]
+  }
+}

@@ -93,15 +93,197 @@ pub enum Element {
     K,
     #[serde(rename = "Ca")]
     Ca,
+    #[serde(rename = "Sc")]
+    Sc,
+    #[serde(rename = "Ti")]
+    Ti,
+    V,
+    #[serde(rename = "Cr")]
+    Cr,
+    #[serde(rename = "Mn")]
+    Mn,
     #[serde(rename = "Fe")]
     Fe,
+    #[serde(rename = "Co")]
+    Co,
+    #[serde(rename = "Ni")]
+    Ni,
     #[serde(rename = "Cu")]
     Cu,
     #[serde(rename = "Zn")]
     Zn,
+    #[serde(rename = "Ga")]
+    Ga,
+    #[serde(rename = "Ge")]
+    Ge,
+    #[serde(rename = "As")]
+    As,
+    #[serde(rename = "Se")]
+    Se,
     #[serde(rename = "Br")]
     Br,
+    #[serde(rename = "Kr")]
+    Kr,
+    #[serde(rename = "Rb")]
+    Rb,
+    #[serde(rename = "Sr")]
+    Sr,
+    Y,
+    #[serde(rename = "Zr")]
+    Zr,
+    #[serde(rename = "Nb")]
+    Nb,
+    #[serde(rename = "Mo")]
+    Mo,
+    #[serde(rename = "Tc")]
+    Tc,
+    #[serde(rename = "Ru")]
+    Ru,
+    #[serde(rename = "Rh")]
+    Rh,
+    #[serde(rename = "Pd")]
+    Pd,
+    #[serde(rename = "Ag")]
+    Ag,
+    #[serde(rename = "Cd")]
+    Cd,
+    #[serde(rename = "In")]
+    In,
+    #[serde(rename = "Sn")]
+    Sn,
+    #[serde(rename = "Sb")]
+    Sb,
+    #[serde(rename = "Te")]
+    Te,
     I,
+    #[serde(rename = "Xe")]
+    Xe,
+    #[serde(rename = "Cs")]
+    Cs,
+    #[serde(rename = "Ba")]
+    Ba,
+    #[serde(rename = "La")]
+    La,
+    #[serde(rename = "Ce")]
+    Ce,
+    #[serde(rename = "Pr")]
+    Pr,
+    #[serde(rename = "Nd")]
+    Nd,
+    #[serde(rename = "Pm")]
+    Pm,
+    #[serde(rename = "Sm")]
+    Sm,
+    #[serde(rename = "Eu")]
+    Eu,
+    #[serde(rename = "Gd")]
+    Gd,
+    #[serde(rename = "Tb")]
+    Tb,
+    #[serde(rename = "Dy")]
+    Dy,
+    #[serde(rename = "Ho")]
+    Ho,
+    #[serde(rename = "Er")]
+    Er,
+    #[serde(rename = "Tm")]
+    Tm,
+    #[serde(rename = "Yb")]
+    Yb,
+    #[serde(rename = "Lu")]
+    Lu,
+    #[serde(rename = "Hf")]
+    Hf,
+    #[serde(rename = "Ta")]
+    Ta,
+    W,
+    #[serde(rename = "Re")]
+    Re,
+    #[serde(rename = "Os")]
+    Os,
+    #[serde(rename = "Ir")]
+    Ir,
+    #[serde(rename = "Pt")]
+    Pt,
+    #[serde(rename = "Au")]
+    Au,
+    #[serde(rename = "Hg")]
+    Hg,
+    #[serde(rename = "Tl")]
+    Tl,
+    #[serde(rename = "Pb")]
+    Pb,
+    #[serde(rename = "Bi")]
+    Bi,
+    #[serde(rename = "Po")]
+    Po,
+    #[serde(rename = "At")]
+    At,
+    #[serde(rename = "Rn")]
+    Rn,
+    #[serde(rename = "Fr")]
+    Fr,
+    #[serde(rename = "Ra")]
+    Ra,
+    #[serde(rename = "Ac")]
+    Ac,
+    #[serde(rename = "Th")]
+    Th,
+    #[serde(rename = "Pa")]
+    Pa,
+    U,
+    #[serde(rename = "Np")]
+    Np,
+    #[serde(rename = "Pu")]
+    Pu,
+    #[serde(rename = "Am")]
+    Am,
+    #[serde(rename = "Cm")]
+    Cm,
+    #[serde(rename = "Bk")]
+    Bk,
+    #[serde(rename = "Cf")]
+    Cf,
+    #[serde(rename = "Es")]
+    Es,
+    #[serde(rename = "Fm")]
+    Fm,
+    #[serde(rename = "Md")]
+    Md,
+    #[serde(rename = "No")]
+    No,
+    #[serde(rename = "Lr")]
+    Lr,
+    #[serde(rename = "Rf")]
+    Rf,
+    #[serde(rename = "Db")]
+    Db,
+    #[serde(rename = "Sg")]
+    Sg,
+    #[serde(rename = "Bh")]
+    Bh,
+    #[serde(rename = "Hs")]
+    Hs,
+    #[serde(rename = "Mt")]
+    Mt,
+    #[serde(rename = "Ds")]
+    Ds,
+    #[serde(rename = "Rg")]
+    Rg,
+    #[serde(rename = "Cn")]
+    Cn,
+    #[serde(rename = "Nh")]
+    Nh,
+    #[serde(rename = "Fl")]
+    Fl,
+    #[serde(rename = "Mc")]
+    Mc,
+    #[serde(rename = "Lv")]
+    Lv,
+    #[serde(rename = "Ts")]
+    Ts,
+    #[serde(rename = "Og")]
+    Og,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
