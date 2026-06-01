@@ -2,6 +2,8 @@ pub mod ai;
 pub mod ai_commands;
 pub mod domain;
 pub mod fragments;
+pub mod functional_group_patterns;
+pub mod functional_groups;
 pub mod gaussian;
 pub mod geometry;
 pub mod parser;
@@ -15,6 +17,9 @@ use domain::{
     SubstituteByFragmentCompletion, ValidationMessage,
 };
 use fragments::list_available_fragments;
+use functional_groups::{
+    match_functional_groups, ordered_benzene_ring_carbons, FunctionalGroupMatch,
+};
 use gaussian::render_gaussian;
 use parser::parse_molecule_file;
 use reducer::{infer_substitute_by_fragment_completion, initial_app_state, reduce};
@@ -44,6 +49,16 @@ fn infer_substitute_by_fragment_completion_tauri(
     selected_atom_id: u32,
 ) -> Option<SubstituteByFragmentCompletion> {
     infer_substitute_by_fragment_completion(&molecule, selected_atom_id)
+}
+
+#[tauri::command]
+fn match_functional_groups_tauri(molecule: Molecule) -> Vec<FunctionalGroupMatch> {
+    match_functional_groups(&molecule)
+}
+
+#[tauri::command]
+fn ordered_benzene_ring_carbons_tauri(molecule: Molecule) -> Option<Vec<u32>> {
+    ordered_benzene_ring_carbons(&molecule)
 }
 
 #[tauri::command]
@@ -109,6 +124,8 @@ pub fn run() {
             list_available_fragments_tauri,
             inspect_fragment_tauri,
             infer_substitute_by_fragment_completion_tauri,
+            match_functional_groups_tauri,
+            ordered_benzene_ring_carbons_tauri,
             get_initial_app_state,
             apply_command,
             apply_commands,
