@@ -34,6 +34,7 @@ export type Atom = {
   element: Element;
   isotope?: number;
   nuclearSpin?: number;
+  formalCharge: number;
   position: [number, number, number];
 };
 
@@ -123,9 +124,9 @@ export const defaultChemicalSpec: ChemicalSpec = {
   molecule: {
     name: "Water",
     atoms: [
-      { id: 1, element: "O", position: [0, 0, 0] },
-      { id: 2, element: "H", position: [0.758, 0.586, 0] },
-      { id: 3, element: "H", position: [-0.758, 0.586, 0] },
+      { id: 1, element: "O", formalCharge: 0, position: [0, 0, 0] },
+      { id: 2, element: "H", formalCharge: 0, position: [0.758, 0.586, 0] },
+      { id: 3, element: "H", formalCharge: 0, position: [-0.758, 0.586, 0] },
     ],
     bonds: [
       { id: 1, atomIds: [1, 2], order: 1 },

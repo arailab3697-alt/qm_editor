@@ -1,5 +1,6 @@
 use crate::domain::{Atom, Bond, Element, Molecule};
 use crate::geometry::{covalent_radius, distance};
+use std::collections::HashMap;
 
 pub fn parse_molecule_file(file_name: &str, text: &str) -> Result<Molecule, String> {
     match file_name.rsplit('.').next().map(str::to_ascii_lowercase) {
@@ -32,6 +33,7 @@ fn parse_xyz(file_name: &str, text: &str) -> Result<Molecule, String> {
             element: parse_element(parts[0])?,
             isotope: None,
             nuclear_spin: None,
+            formal_charge: 0,
             position: [
                 parse_coord(parts[1], "XYZ coordinates must be numeric.")?,
                 parse_coord(parts[2], "XYZ coordinates must be numeric.")?,
@@ -84,6 +86,7 @@ fn parse_mol(file_name: &str, text: &str) -> Result<Molecule, String> {
             element: parse_element(parts[3])?,
             isotope: None,
             nuclear_spin: None,
+            formal_charge: 0,
             position: [
                 parse_coord(parts[0], "MOL coordinates must be numeric.")?,
                 parse_coord(parts[1], "MOL coordinates must be numeric.")?,
@@ -117,6 +120,13 @@ fn parse_mol(file_name: &str, text: &str) -> Result<Molecule, String> {
         });
     }
 
+    let formal_charges = parse_mol_charge_records(&lines, atom_count, bond_count);
+    for atom in &mut atoms {
+        if let Some(charge) = formal_charges.get(&atom.id) {
+            atom.formal_charge = *charge;
+        }
+    }
+
     Ok(Molecule {
         name: lines
             .first()
@@ -126,6 +136,34 @@ fn parse_mol(file_name: &str, text: &str) -> Result<Molecule, String> {
         atoms,
         bonds,
     })
+}
+
+fn parse_mol_charge_records(
+    lines: &[&str],
+    atom_count: usize,
+    bond_count: usize,
+) -> HashMap<u32, i32> {
+    let mut charges = HashMap::new();
+    for line in lines.iter().skip(4 + atom_count + bond_count) {
+        let parts = line.split_whitespace().collect::<Vec<_>>();
+        if parts.len() < 3 || parts[0] != "M" || parts[1] != "CHG" {
+            continue;
+        }
+        let pair_count = parts[2].parse::<usize>().unwrap_or(0);
+        for pair in parts[3..].chunks(2).take(pair_count) {
+            let [atom_id, charge] = pair else {
+                continue;
+            };
+            let Ok(atom_id) = atom_id.parse::<u32>() else {
+                continue;
+            };
+            let Ok(charge) = charge.parse::<i32>() else {
+                continue;
+            };
+            charges.insert(atom_id, charge);
+        }
+    }
+    charges
 }
 
 fn infer_bonds(atoms: &[Atom]) -> Vec<Bond> {

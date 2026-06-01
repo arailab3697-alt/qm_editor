@@ -32,6 +32,7 @@ pub fn build_ai_context(state: &crate::domain::AppState) -> AiContext {
                     element: atom.element,
                     isotope: atom.isotope,
                     nuclear_spin: atom.nuclear_spin,
+                    formal_charge: atom.formal_charge,
                     position: atom.position,
                 })
         })
@@ -342,6 +343,13 @@ fn resolve_command_atom_references(
         Command::DeleteAtom { atom_id } => Command::DeleteAtom {
             atom_id: resolve_display_index(context, atom_id)?,
         },
+        Command::SetAtomFormalCharge {
+            atom_id,
+            formal_charge,
+        } => Command::SetAtomFormalCharge {
+            atom_id: resolve_display_index(context, atom_id)?,
+            formal_charge,
+        },
         Command::AddBond { atom_ids, order } => Command::AddBond {
             atom_ids: resolve_pair(atom_ids, context)?,
             order,
@@ -456,6 +464,7 @@ fn dedupe_commands_by_rules(commands: Vec<Command>) -> Vec<Command> {
             | Command::SetBondAngle { .. }
             | Command::SetDihedralAngle { .. }
             | Command::AddAtom { .. }
+            | Command::SetAtomFormalCharge { .. }
             | Command::DeleteAtom { .. }
             | Command::AddBond { .. }
             | Command::DeleteBond { .. }

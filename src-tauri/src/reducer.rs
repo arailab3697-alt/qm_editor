@@ -20,6 +20,7 @@ pub fn initial_app_state() -> AppState {
                             element: Element::O,
                             isotope: None,
                             nuclear_spin: None,
+                            formal_charge: 0,
                             position: [0.0, 0.0, 0.0],
                         },
                         crate::domain::Atom {
@@ -27,6 +28,7 @@ pub fn initial_app_state() -> AppState {
                             element: Element::H,
                             isotope: None,
                             nuclear_spin: None,
+                            formal_charge: 0,
                             position: [0.758, 0.586, 0.0],
                         },
                         crate::domain::Atom {
@@ -34,6 +36,7 @@ pub fn initial_app_state() -> AppState {
                             element: Element::H,
                             isotope: None,
                             nuclear_spin: None,
+                            formal_charge: 0,
                             position: [-0.758, 0.586, 0.0],
                         },
                     ],
@@ -119,13 +122,23 @@ pub fn reduce(mut state: AppState, command: Command) -> AppState {
             position,
             isotope,
             nuclear_spin,
+            formal_charge,
         } => add_atom(
             &mut state.domain.chemical_spec.molecule,
             element,
             position,
             isotope,
             nuclear_spin,
+            formal_charge,
         ),
+        Command::SetAtomFormalCharge {
+            atom_id,
+            formal_charge,
+        } => {
+            if let Some(atom_index) = atom_index(&state.domain.chemical_spec.molecule, atom_id) {
+                state.domain.chemical_spec.molecule.atoms[atom_index].formal_charge = formal_charge;
+            }
+        }
         Command::DeleteAtom { atom_id } => {
             delete_atom(&mut state.domain.chemical_spec.molecule, atom_id);
             state
@@ -457,6 +470,7 @@ fn add_atom(
     position: [f64; 3],
     isotope: Option<MassNumber>,
     nuclear_spin: Option<TwiceSpin>,
+    formal_charge: i32,
 ) {
     if !position.iter().all(|coordinate| coordinate.is_finite()) {
         return;
@@ -466,6 +480,7 @@ fn add_atom(
         element,
         isotope,
         nuclear_spin,
+        formal_charge,
         position,
     });
 }
@@ -779,8 +794,9 @@ pub fn substitute_by_fragment(
             id: next_atom,
             element: atom.element.clone(),
             position: atom.position,
-            isotope: None,
-            nuclear_spin: None,
+            isotope: atom.isotope,
+            nuclear_spin: atom.nuclear_spin,
+            formal_charge: atom.formal_charge,
         });
 
         next_atom += 1;
@@ -962,6 +978,7 @@ mod tests {
                 position: [1.0, 2.0, 3.0],
                 isotope: Some(MassNumber(13)),
                 nuclear_spin: Some(TwiceSpin(1)),
+                formal_charge: -1,
             },
         );
         let atom = state
@@ -976,7 +993,24 @@ mod tests {
         assert_eq!(atom.element, Element::C);
         assert_eq!(atom.isotope, Some(MassNumber(13)));
         assert_eq!(atom.nuclear_spin, Some(TwiceSpin(1)));
+        assert_eq!(atom.formal_charge, -1);
         assert_eq!(atom.position, [1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn set_atom_formal_charge_updates_selected_atom() {
+        let state = reduce(
+            initial_app_state(),
+            Command::SetAtomFormalCharge {
+                atom_id: 1,
+                formal_charge: 1,
+            },
+        );
+
+        assert_eq!(
+            state.domain.chemical_spec.molecule.atoms[0].formal_charge,
+            1
+        );
     }
 
     #[test]

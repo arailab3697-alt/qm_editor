@@ -149,7 +149,7 @@ function MoleculeViewer() {
     viewer.setStyle({}, { stick: { radius: 0.15 }, sphere: { scale: 0.34 } });
 
     molecule.atoms.forEach((atom, index) => {
-      viewer.addLabel(String(index + 1), {
+      viewer.addLabel(formatAtomLabel(index + 1, atom.formalCharge), {
         position: { x: atom.position[0], y: atom.position[1], z: atom.position[2] },
         backgroundColor: "white",
         backgroundOpacity: 0.5,
@@ -285,13 +285,26 @@ function MoleculeEditor() {
   const [z, setZ] = useState("0");
   const [isotope, setIsotope] = useState("");
   const [nuclearSpin, setNuclearSpin] = useState("");
+  const [formalCharge, setFormalCharge] = useState("0");
+  const [selectedFormalCharge, setSelectedFormalCharge] = useState("0");
   const [bondOrder, setBondOrder] = useState<1 | 2 | 3>(1);
+  const molecule = state?.domain.chemicalSpec.molecule;
+  const selected = state?.ui.selectedAtoms ?? [];
 
-  if (!state) return null;
-  const molecule = state.domain.chemicalSpec.molecule;
-  const selected = state.ui.selectedAtoms;
+  useEffect(() => {
+    if (!molecule || selected.length !== 1) return;
+    const atom = molecule.atoms.find((candidate) => candidate.id === selected[0]);
+    if (atom) setSelectedFormalCharge(String(atom.formalCharge));
+  }, [molecule, selected]);
+
+  if (!state || !molecule) return null;
   const coordinates = [Number(x), Number(y), Number(z)] as [number, number, number];
-  const canAddAtom = coordinates.every(Number.isFinite) && isOptionalInteger(isotope, 1) && isOptionalInteger(nuclearSpin, 0);
+  const canAddAtom =
+    coordinates.every(Number.isFinite) &&
+    isOptionalInteger(isotope, 1) &&
+    isOptionalInteger(nuclearSpin, 0) &&
+    isInteger(formalCharge);
+  const canSetFormalCharge = selected.length > 0 && isInteger(selectedFormalCharge);
   const selectedBondIds = molecule.bonds
     .filter((bond) => bond.atomIds.every((atomId) => selected.includes(atomId)))
     .map((bond) => bond.id);
@@ -304,6 +317,7 @@ function MoleculeEditor() {
       position: coordinates,
       isotope: isotope === "" ? undefined : Number(isotope),
       nuclearSpin: nuclearSpin === "" ? undefined : Number(nuclearSpin),
+      formalCharge: Number(formalCharge),
     });
   }
 
@@ -325,6 +339,7 @@ function MoleculeEditor() {
         <NumberTextField label="Z" value={z} step="0.001" onChange={setZ} />
         <NumberTextField label="Isotope" value={isotope} min="1" step="1" onChange={setIsotope} />
         <NumberTextField label="2I" value={nuclearSpin} min="0" step="1" onChange={setNuclearSpin} />
+        <NumberTextField label="Formal charge" value={formalCharge} step="1" onChange={setFormalCharge} />
       </div>
 
       <div className="editor-actions">
@@ -337,6 +352,31 @@ function MoleculeEditor() {
       </div>
 
       <div className="bond-actions">
+        <label>
+          Selected charge
+          <input
+            type="number"
+            step="1"
+            value={selectedFormalCharge}
+            disabled={selected.length === 0}
+            onChange={(event) => setSelectedFormalCharge(event.currentTarget.value)}
+          />
+        </label>
+        <button
+          type="button"
+          disabled={!canSetFormalCharge}
+          onClick={() =>
+            void applyCommands(
+              selected.map((atomId) => ({
+                type: "SET_ATOM_FORMAL_CHARGE",
+                atomId,
+                formalCharge: Number(selectedFormalCharge),
+              })),
+            )
+          }
+        >
+          Set Formal Charge
+        </button>
         <label>
           Bond order
           <select value={bondOrder} onChange={(event) => setBondOrder(Number(event.currentTarget.value) as 1 | 2 | 3)}>
@@ -788,6 +828,18 @@ function isOptionalInteger(value: string, min: number) {
   return Number.isInteger(numeric) && numeric >= min;
 }
 
+function isInteger(value: string) {
+  return Number.isInteger(Number(value));
+}
+
+function formatAtomLabel(displayIndex: number, formalCharge: number) {
+  formalCharge = formalCharge ?? 0;
+  if (formalCharge === 0) return String(displayIndex);
+  const magnitude = Math.abs(formalCharge);
+  const sign = formalCharge > 0 ? "+" : "-";
+  return `${displayIndex} ${magnitude === 1 ? sign : `${magnitude}${sign}`}`;
+}
+
 function formatSelectedDisplayAtoms(molecule: Molecule, selectedAtomIds: number[]) {
   if (selectedAtomIds.length === 0) return "No selection";
   const displayIds = selectedAtomIds
@@ -874,6 +926,7 @@ function moleculeToMol(molecule: Molecule) {
       return `${formatMolInteger(firstIndex, 3)}${formatMolInteger(secondIndex, 3)}${formatMolInteger(bond.order, 3)}  0  0  0  0`;
     })
     .filter((line): line is string => line !== undefined);
+  const chargeLines = formatMolChargeLines(molecule);
 
   return [
     molecule.name,
@@ -885,9 +938,26 @@ function moleculeToMol(molecule: Molecule) {
       return `${formatMolFloat(x)}${formatMolFloat(y)}${formatMolFloat(z)} ${element.padEnd(3, " ")} 0  0  0  0  0  0  0  0  0  0  0  0`;
     }),
     ...bondLines,
+    ...chargeLines,
     "M  END",
     "",
   ].join("\n");
+}
+
+function formatMolChargeLines(molecule: Molecule) {
+  const entries = molecule.atoms
+    .map((atom, index) => ({ atomIndex: index + 1, formalCharge: atom.formalCharge ?? 0 }))
+    .filter((entry) => entry.formalCharge !== 0);
+
+  const lines: string[] = [];
+  for (let index = 0; index < entries.length; index += 8) {
+    const chunk = entries.slice(index, index + 8);
+    const values = chunk
+      .map((entry) => `${formatMolInteger(entry.atomIndex, 4)}${formatMolInteger(entry.formalCharge, 4)}`)
+      .join("");
+    lines.push(`M  CHG${formatMolInteger(chunk.length, 3)}${values}`);
+  }
+  return lines;
 }
 
 function formatMolFloat(value: number) {

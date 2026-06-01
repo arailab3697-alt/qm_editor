@@ -41,6 +41,8 @@ pub struct Atom {
     pub element: Element,
     pub isotope: Option<MassNumber>,
     pub nuclear_spin: Option<TwiceSpin>,
+    #[serde(default)]
+    pub formal_charge: i32,
     pub position: [f64; 3],
 }
 
@@ -51,6 +53,9 @@ pub struct Bond {
     pub atom_ids: [u32; 2],
     pub order: u8,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct Electronegativity(pub f64);
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
@@ -421,6 +426,12 @@ pub enum Command {
         position: [f64; 3],
         isotope: Option<MassNumber>,
         nuclear_spin: Option<TwiceSpin>,
+        #[serde(default)]
+        formal_charge: i32,
+    },
+    SetAtomFormalCharge {
+        atom_id: u32,
+        formal_charge: i32,
     },
     DeleteAtom {
         atom_id: u32,
@@ -487,6 +498,7 @@ pub struct AtomSummary {
     pub element: Element,
     pub isotope: Option<MassNumber>,
     pub nuclear_spin: Option<TwiceSpin>,
+    pub formal_charge: i32,
     pub position: [f64; 3],
 }
 
@@ -569,6 +581,55 @@ pub fn atom_position(molecule: &Molecule, atom_id: u32) -> Option<[f64; 3]> {
         .iter()
         .find(|atom| atom.id == atom_id)
         .map(|atom| atom.position)
+}
+
+pub fn electronegativity(element: Element) -> Option<Electronegativity> {
+    Some(Electronegativity(match element {
+        Element::H => 2.20,
+        Element::Li => 0.98,
+        Element::Be => 1.57,
+        Element::B => 2.04,
+        Element::C => 2.55,
+        Element::N => 3.04,
+        Element::O => 3.44,
+        Element::F => 3.98,
+        Element::Cl => 3.16,
+        Element::Br => 2.96,
+        Element::I => 2.66,
+        _ => return None,
+    }))
+}
+
+pub fn atom_oxidation_number(molecule: &Molecule, atom_id: u32) -> Option<i32> {
+    let atom = molecule.atoms.iter().find(|atom| atom.id == atom_id)?;
+    let atom_electronegativity = electronegativity(atom.element)?;
+    let mut oxidation_number = atom.formal_charge;
+
+    for bond in molecule
+        .bonds
+        .iter()
+        .filter(|bond| bond.atom_ids.contains(&atom_id))
+    {
+        let other_atom_id = if bond.atom_ids[0] == atom_id {
+            bond.atom_ids[1]
+        } else {
+            bond.atom_ids[0]
+        };
+        let other_atom = molecule
+            .atoms
+            .iter()
+            .find(|atom| atom.id == other_atom_id)?;
+        let other_electronegativity = electronegativity(other_atom.element)?;
+        let order = i32::from(bond.order);
+
+        if atom_electronegativity < other_electronegativity {
+            oxidation_number += order;
+        } else if atom_electronegativity > other_electronegativity {
+            oxidation_number -= order;
+        }
+    }
+
+    Some(oxidation_number)
 }
 
 pub fn same_bond(left: [u32; 2], right: [u32; 2]) -> bool {

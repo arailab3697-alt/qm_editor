@@ -11,8 +11,8 @@ use checker::Checker;
 
 use crate::ai_commands::{parse_ai_result_json, propose_commands_by_rules as propose_by_rules};
 use crate::domain::{
-    AiContext, AiResult, AppState, AtomSummary, CalculationSpec, CalculationSummary,
-    Element, FragmentDefinition, MassNumber, TwiceSpin,
+    AiContext, AiResult, AppState, AtomSummary, CalculationSpec, CalculationSummary, Element,
+    FragmentDefinition, MassNumber, TwiceSpin,
 };
 use crate::fragments;
 use crate::templates;
@@ -330,6 +330,7 @@ struct AiVisibleAtom {
     element: Element,
     isotope: Option<MassNumber>,
     nuclear_spin: Option<TwiceSpin>,
+    formal_charge: i32,
     position: [f64; 3],
 }
 
@@ -410,6 +411,7 @@ fn build_ai_visible_state(state: &AppState) -> AiVisibleState<'_> {
             element: atom.element,
             isotope: atom.isotope,
             nuclear_spin: atom.nuclear_spin,
+            formal_charge: atom.formal_charge,
             position: atom.position,
         })
         .collect();
@@ -487,6 +489,7 @@ Allowed command types and their fields:
 - SET_BOND_ANGLE: {"type": "SET_BOND_ANGLE", "atomIds": [id1, id2, id3], "angle": number, "mode"?: "ATOM_ONLY" | "MOVE_OTHER_SIDE" | "MOVE_BOTH_SIDES"}
 - SET_DIHEDRAL_ANGLE: {"type": "SET_DIHEDRAL_ANGLE", "atomIds": [id1, id2, id3, id4], "angle": number, "mode"?: "ATOM_ONLY" | "MOVE_OTHER_SIDE" | "MOVE_BOTH_SIDES"}
 - ADD_ATOM: {"type": "ADD_ATOM", "element": string, "position": [x, y, z], "isotope"?: number, "nuclearSpin"?: number}
+- SET_ATOM_FORMAL_CHARGE: {"type": "SET_ATOM_FORMAL_CHARGE", "atomId": number, "formalCharge": number}
 - DELETE_ATOM: {"type": "DELETE_ATOM", "atomId": number}
 - ADD_BOND: {"type": "ADD_BOND", "atomIds": [id1, id2], "order": 1 | 2 | 3}
 - DELETE_BOND: {"type": "DELETE_BOND", "bondId": number}
