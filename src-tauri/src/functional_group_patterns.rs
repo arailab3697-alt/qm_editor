@@ -1,69 +1,49 @@
 use crate::domain::Element;
 use crate::functional_groups::FunctionalGroupKind;
+use std::sync::LazyLock;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PatternRole {
     Center,
-    Attachment,
-    CarbonylO,
-    SingleO,
-    SecondO,
-    H,
-    N,
-    C1,
-    C2,
-    X,
+    Other(String),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct FunctionalGroupPattern {
     pub kind: FunctionalGroupKind,
-    pub atoms: &'static [PatternAtom],
-    pub bonds: &'static [PatternBond],
-    pub constraints: &'static [PatternConstraint],
+    pub atoms: Vec<PatternAtom>,
+    pub bonds: Vec<PatternBond>,
+    pub constraints: Vec<NeighborQuery>,
     pub attachment: Option<PatternAttachment>,
     pub reference: Option<PatternRole>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct PatternAtom {
     pub role: PatternRole,
     pub element: PatternElement,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct PatternBond {
     pub left: PatternRole,
     pub right: PatternRole,
     pub order: u8,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum PatternConstraint {
-    HasHydrogenNeighbor {
-        role: PatternRole,
-    },
-    HasCarbonNeighborExcept {
-        role: PatternRole,
-        except: PatternRole,
-    },
-    CarbonNeighborCountAtLeast {
-        role: PatternRole,
-        count: usize,
-        except: PatternRole,
-    },
+#[derive(Clone, Debug)]
+pub struct NeighborQuery {
+    pub from: PatternRole,
+    pub element: PatternElement,
+    pub bond_order: Option<u8>,
+    pub exclude: Vec<PatternRole>,
+    pub min_count: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum PatternAttachment {
     Role(PatternRole),
-    CarbonNeighborOf {
-        role: PatternRole,
-    },
-    CarbonNeighborOfExcept {
-        role: PatternRole,
-        except: PatternRole,
-    },
+    Neighbor(NeighborQuery),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -72,236 +52,296 @@ pub enum PatternElement {
     Exact(Element),
 }
 
-pub const FUNCTIONAL_GROUP_PATTERNS: &[FunctionalGroupPattern] = &[
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::CarboxylicAcid,
-        atoms: &[
-            atom(PatternRole::Center, Element::C),
-            atom(PatternRole::CarbonylO, Element::O),
-            atom(PatternRole::SingleO, Element::O),
-        ],
-        bonds: &[
-            bond(PatternRole::Center, PatternRole::CarbonylO, 2),
-            bond(PatternRole::Center, PatternRole::SingleO, 1),
-        ],
-        constraints: &[PatternConstraint::HasHydrogenNeighbor {
-            role: PatternRole::SingleO,
-        }],
-        attachment: Some(PatternAttachment::CarbonNeighborOfExcept {
-            role: PatternRole::Center,
-            except: PatternRole::SingleO,
-        }),
-        reference: Some(PatternRole::Center),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::SulfonicAcid,
-        atoms: &[
-            atom(PatternRole::Center, Element::S),
-            atom(PatternRole::CarbonylO, Element::O),
-            atom(PatternRole::SecondO, Element::O),
-            atom(PatternRole::SingleO, Element::O),
-        ],
-        bonds: &[
-            bond(PatternRole::Center, PatternRole::CarbonylO, 2),
-            bond(PatternRole::Center, PatternRole::SecondO, 2),
-            bond(PatternRole::Center, PatternRole::SingleO, 1),
-        ],
-        constraints: &[PatternConstraint::HasHydrogenNeighbor {
-            role: PatternRole::SingleO,
-        }],
-        attachment: Some(PatternAttachment::CarbonNeighborOf {
-            role: PatternRole::Center,
-        }),
-        reference: Some(PatternRole::Center),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Amide,
-        atoms: &[
-            atom(PatternRole::Center, Element::C),
-            atom(PatternRole::CarbonylO, Element::O),
-            atom(PatternRole::N, Element::N),
-        ],
-        bonds: &[
-            bond(PatternRole::Center, PatternRole::CarbonylO, 2),
-            bond(PatternRole::Center, PatternRole::N, 1),
-        ],
-        constraints: &[],
-        attachment: Some(PatternAttachment::CarbonNeighborOfExcept {
-            role: PatternRole::Center,
-            except: PatternRole::N,
-        }),
-        reference: Some(PatternRole::Center),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Nitrile,
-        atoms: &[
-            atom(PatternRole::Center, Element::C),
-            atom(PatternRole::N, Element::N),
-        ],
-        bonds: &[bond(PatternRole::Center, PatternRole::N, 3)],
-        constraints: &[],
-        attachment: Some(PatternAttachment::CarbonNeighborOfExcept {
-            role: PatternRole::Center,
-            except: PatternRole::N,
-        }),
-        reference: Some(PatternRole::Center),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Ester,
-        atoms: &[
-            atom(PatternRole::Center, Element::C),
-            atom(PatternRole::CarbonylO, Element::O),
-            atom(PatternRole::SingleO, Element::O),
-        ],
-        bonds: &[
-            bond(PatternRole::Center, PatternRole::CarbonylO, 2),
-            bond(PatternRole::Center, PatternRole::SingleO, 1),
-        ],
-        constraints: &[PatternConstraint::HasCarbonNeighborExcept {
-            role: PatternRole::SingleO,
-            except: PatternRole::Center,
-        }],
-        attachment: Some(PatternAttachment::CarbonNeighborOfExcept {
-            role: PatternRole::Center,
-            except: PatternRole::SingleO,
-        }),
-        reference: Some(PatternRole::Center),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Aldehyde,
-        atoms: &[
-            atom(PatternRole::Center, Element::C),
-            atom(PatternRole::CarbonylO, Element::O),
-        ],
-        bonds: &[bond(PatternRole::Center, PatternRole::CarbonylO, 2)],
-        constraints: &[PatternConstraint::HasHydrogenNeighbor {
-            role: PatternRole::Center,
-        }],
-        attachment: Some(PatternAttachment::CarbonNeighborOfExcept {
-            role: PatternRole::Center,
-            except: PatternRole::CarbonylO,
-        }),
-        reference: Some(PatternRole::Center),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Ketone,
-        atoms: &[
-            atom(PatternRole::Center, Element::C),
-            atom(PatternRole::CarbonylO, Element::O),
-        ],
-        bonds: &[bond(PatternRole::Center, PatternRole::CarbonylO, 2)],
-        constraints: &[PatternConstraint::CarbonNeighborCountAtLeast {
-            role: PatternRole::Center,
-            count: 2,
-            except: PatternRole::CarbonylO,
-        }],
-        attachment: Some(PatternAttachment::CarbonNeighborOfExcept {
-            role: PatternRole::Center,
-            except: PatternRole::CarbonylO,
-        }),
-        reference: Some(PatternRole::Center),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Alcohol,
-        atoms: &[
-            atom(PatternRole::Center, Element::O),
-            atom(PatternRole::C1, Element::C),
-        ],
-        bonds: &[bond(PatternRole::Center, PatternRole::C1, 1)],
-        constraints: &[PatternConstraint::HasHydrogenNeighbor {
-            role: PatternRole::Center,
-        }],
-        attachment: Some(PatternAttachment::Role(PatternRole::C1)),
-        reference: Some(PatternRole::Center),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Amine,
-        atoms: &[
-            atom(PatternRole::Center, Element::N),
-            atom(PatternRole::C1, Element::C),
-        ],
-        bonds: &[bond(PatternRole::Center, PatternRole::C1, 1)],
-        constraints: &[],
-        attachment: Some(PatternAttachment::Role(PatternRole::C1)),
-        reference: Some(PatternRole::Center),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Alkene,
-        atoms: &[
-            atom(PatternRole::C1, Element::C),
-            atom(PatternRole::C2, Element::C),
-        ],
-        bonds: &[bond(PatternRole::C1, PatternRole::C2, 2)],
-        constraints: &[],
-        attachment: None,
-        reference: Some(PatternRole::C1),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Alkyne,
-        atoms: &[
-            atom(PatternRole::C1, Element::C),
-            atom(PatternRole::C2, Element::C),
-        ],
-        bonds: &[bond(PatternRole::C1, PatternRole::C2, 3)],
-        constraints: &[],
-        attachment: None,
-        reference: Some(PatternRole::C1),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Ether,
-        atoms: &[
-            atom(PatternRole::Center, Element::O),
-            atom(PatternRole::C1, Element::C),
-            atom(PatternRole::C2, Element::C),
-        ],
-        bonds: &[
-            bond(PatternRole::Center, PatternRole::C1, 1),
-            bond(PatternRole::Center, PatternRole::C2, 1),
-        ],
-        constraints: &[],
-        attachment: Some(PatternAttachment::Role(PatternRole::C1)),
-        reference: Some(PatternRole::Center),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Halogen,
-        atoms: &[
-            PatternAtom {
-                role: PatternRole::X,
-                element: PatternElement::AnyHalogen,
-            },
-            atom(PatternRole::C1, Element::C),
-        ],
-        bonds: &[bond(PatternRole::X, PatternRole::C1, 1)],
-        constraints: &[],
-        attachment: Some(PatternAttachment::Role(PatternRole::C1)),
-        reference: Some(PatternRole::X),
-    },
-    FunctionalGroupPattern {
-        kind: FunctionalGroupKind::Nitro,
-        atoms: &[
-            atom(PatternRole::Center, Element::N),
-            atom(PatternRole::CarbonylO, Element::O),
-            atom(PatternRole::SingleO, Element::O),
-            atom(PatternRole::C1, Element::C),
-        ],
-        bonds: &[
-            bond(PatternRole::Center, PatternRole::CarbonylO, 2),
-            bond(PatternRole::Center, PatternRole::SingleO, 1),
-            bond(PatternRole::Center, PatternRole::C1, 1),
-        ],
-        constraints: &[],
-        attachment: Some(PatternAttachment::Role(PatternRole::C1)),
-        reference: Some(PatternRole::Center),
-    },
-];
+pub static FUNCTIONAL_GROUP_PATTERNS: LazyLock<Vec<FunctionalGroupPattern>> = LazyLock::new(|| {
+    vec![
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::CarboxylicAcid,
+            atoms: vec![
+                atom(PatternRole::Center, Element::C),
+                atom(o_double(), Element::O),
+                atom(o_single(), Element::O),
+            ],
+            bonds: vec![
+                bond(PatternRole::Center, o_double(), 2),
+                bond(PatternRole::Center, o_single(), 1),
+            ],
+            constraints: vec![neighbor(o_single(), Element::H, Some(1), [], 1)],
+            attachment: Some(PatternAttachment::Neighbor(neighbor(
+                PatternRole::Center,
+                Element::C,
+                Some(1),
+                [o_single(), o_double()],
+                1,
+            ))),
+            reference: Some(PatternRole::Center),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::SulfonicAcid,
+            atoms: vec![
+                atom(PatternRole::Center, Element::S),
+                atom(o_double(), Element::O),
+                atom(o_second(), Element::O),
+                atom(o_single(), Element::O),
+            ],
+            bonds: vec![
+                bond(PatternRole::Center, o_double(), 2),
+                bond(PatternRole::Center, o_second(), 2),
+                bond(PatternRole::Center, o_single(), 1),
+            ],
+            constraints: vec![neighbor(o_single(), Element::H, Some(1), [], 1)],
+            attachment: Some(PatternAttachment::Neighbor(neighbor(
+                PatternRole::Center,
+                Element::C,
+                Some(1),
+                [o_single(), o_double(), o_second()],
+                1,
+            ))),
+            reference: Some(PatternRole::Center),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Amide,
+            atoms: vec![
+                atom(PatternRole::Center, Element::C),
+                atom(o_double(), Element::O),
+                atom(n(), Element::N),
+            ],
+            bonds: vec![
+                bond(PatternRole::Center, o_double(), 2),
+                bond(PatternRole::Center, n(), 1),
+            ],
+            constraints: vec![],
+            attachment: Some(PatternAttachment::Neighbor(neighbor(
+                PatternRole::Center,
+                Element::C,
+                Some(1),
+                [n(), o_double()],
+                1,
+            ))),
+            reference: Some(PatternRole::Center),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Nitrile,
+            atoms: vec![atom(PatternRole::Center, Element::C), atom(n(), Element::N)],
+            bonds: vec![bond(PatternRole::Center, n(), 3)],
+            constraints: vec![],
+            attachment: Some(PatternAttachment::Neighbor(neighbor(
+                PatternRole::Center,
+                Element::C,
+                Some(1),
+                [n()],
+                1,
+            ))),
+            reference: Some(PatternRole::Center),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Ester,
+            atoms: vec![
+                atom(PatternRole::Center, Element::C),
+                atom(o_double(), Element::O),
+                atom(o_single(), Element::O),
+            ],
+            bonds: vec![
+                bond(PatternRole::Center, o_double(), 2),
+                bond(PatternRole::Center, o_single(), 1),
+            ],
+            constraints: vec![neighbor(
+                o_single(),
+                Element::C,
+                Some(1),
+                [PatternRole::Center],
+                1,
+            )],
+            attachment: Some(PatternAttachment::Neighbor(neighbor(
+                PatternRole::Center,
+                Element::C,
+                Some(1),
+                [o_single(), o_double()],
+                1,
+            ))),
+            reference: Some(PatternRole::Center),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Aldehyde,
+            atoms: vec![
+                atom(PatternRole::Center, Element::C),
+                atom(o_double(), Element::O),
+            ],
+            bonds: vec![bond(PatternRole::Center, o_double(), 2)],
+            constraints: vec![neighbor(PatternRole::Center, Element::H, Some(1), [], 1)],
+            attachment: Some(PatternAttachment::Neighbor(neighbor(
+                PatternRole::Center,
+                Element::C,
+                Some(1),
+                [o_double()],
+                1,
+            ))),
+            reference: Some(PatternRole::Center),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Ketone,
+            atoms: vec![
+                atom(PatternRole::Center, Element::C),
+                atom(o_double(), Element::O),
+            ],
+            bonds: vec![bond(PatternRole::Center, o_double(), 2)],
+            constraints: vec![neighbor(
+                PatternRole::Center,
+                Element::C,
+                Some(1),
+                [o_double()],
+                2,
+            )],
+            attachment: Some(PatternAttachment::Neighbor(neighbor(
+                PatternRole::Center,
+                Element::C,
+                Some(1),
+                [o_double()],
+                1,
+            ))),
+            reference: Some(PatternRole::Center),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Alcohol,
+            atoms: vec![
+                atom(PatternRole::Center, Element::O),
+                atom(c1(), Element::C),
+            ],
+            bonds: vec![bond(PatternRole::Center, c1(), 1)],
+            constraints: vec![neighbor(PatternRole::Center, Element::H, Some(1), [], 1)],
+            attachment: Some(PatternAttachment::Role(c1())),
+            reference: Some(PatternRole::Center),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Amine,
+            atoms: vec![
+                atom(PatternRole::Center, Element::N),
+                atom(c1(), Element::C),
+            ],
+            bonds: vec![bond(PatternRole::Center, c1(), 1)],
+            constraints: vec![],
+            attachment: Some(PatternAttachment::Role(c1())),
+            reference: Some(PatternRole::Center),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Alkene,
+            atoms: vec![atom(c1(), Element::C), atom(c2(), Element::C)],
+            bonds: vec![bond(c1(), c2(), 2)],
+            constraints: vec![],
+            attachment: None,
+            reference: Some(c1()),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Alkyne,
+            atoms: vec![atom(c1(), Element::C), atom(c2(), Element::C)],
+            bonds: vec![bond(c1(), c2(), 3)],
+            constraints: vec![],
+            attachment: None,
+            reference: Some(c1()),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Ether,
+            atoms: vec![
+                atom(PatternRole::Center, Element::O),
+                atom(c1(), Element::C),
+                atom(c2(), Element::C),
+            ],
+            bonds: vec![
+                bond(PatternRole::Center, c1(), 1),
+                bond(PatternRole::Center, c2(), 1),
+            ],
+            constraints: vec![],
+            attachment: Some(PatternAttachment::Role(c1())),
+            reference: Some(PatternRole::Center),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Halogen,
+            atoms: vec![
+                PatternAtom {
+                    role: x(),
+                    element: PatternElement::AnyHalogen,
+                },
+                atom(c1(), Element::C),
+            ],
+            bonds: vec![bond(x(), c1(), 1)],
+            constraints: vec![],
+            attachment: Some(PatternAttachment::Role(c1())),
+            reference: Some(x()),
+        },
+        FunctionalGroupPattern {
+            kind: FunctionalGroupKind::Nitro,
+            atoms: vec![
+                atom(PatternRole::Center, Element::N),
+                atom(o_double(), Element::O),
+                atom(o_single(), Element::O),
+                atom(c1(), Element::C),
+            ],
+            bonds: vec![
+                bond(PatternRole::Center, o_double(), 2),
+                bond(PatternRole::Center, o_single(), 1),
+                bond(PatternRole::Center, c1(), 1),
+            ],
+            constraints: vec![],
+            attachment: Some(PatternAttachment::Role(c1())),
+            reference: Some(PatternRole::Center),
+        },
+    ]
+});
 
-const fn atom(role: PatternRole, element: Element) -> PatternAtom {
+fn role(name: &str) -> PatternRole {
+    PatternRole::Other(name.to_string())
+}
+
+fn o_double() -> PatternRole {
+    role("carbonyl_o")
+}
+
+fn o_single() -> PatternRole {
+    role("single_o")
+}
+
+fn o_second() -> PatternRole {
+    role("second_o")
+}
+
+fn n() -> PatternRole {
+    role("n")
+}
+
+fn c1() -> PatternRole {
+    role("c1")
+}
+
+fn c2() -> PatternRole {
+    role("c2")
+}
+
+fn x() -> PatternRole {
+    role("x")
+}
+
+fn atom(role: PatternRole, element: Element) -> PatternAtom {
     PatternAtom {
         role,
         element: PatternElement::Exact(element),
     }
 }
 
-const fn bond(left: PatternRole, right: PatternRole, order: u8) -> PatternBond {
+fn bond(left: PatternRole, right: PatternRole, order: u8) -> PatternBond {
     PatternBond { left, right, order }
+}
+
+fn neighbor<const N: usize>(
+    from: PatternRole,
+    element: Element,
+    bond_order: Option<u8>,
+    exclude: [PatternRole; N],
+    min_count: usize,
+) -> NeighborQuery {
+    NeighborQuery {
+        from,
+        element: PatternElement::Exact(element),
+        bond_order,
+        exclude: exclude.into_iter().collect(),
+        min_count,
+    }
 }

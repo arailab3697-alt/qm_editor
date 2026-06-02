@@ -1,6 +1,6 @@
 use crate::domain::{same_bond, Atom, Bond, Element, Molecule};
 use crate::functional_group_patterns::{
-    FunctionalGroupPattern, PatternAttachment, PatternConstraint, PatternElement, PatternRole,
+    FunctionalGroupPattern, NeighborQuery, PatternAttachment, PatternElement, PatternRole,
     FUNCTIONAL_GROUP_PATTERNS,
 };
 use serde::Serialize;
@@ -46,7 +46,7 @@ pub fn match_functional_groups(molecule: &Molecule) -> Vec<FunctionalGroupMatch>
         });
     }
 
-    for pattern in FUNCTIONAL_GROUP_PATTERNS {
+    for pattern in FUNCTIONAL_GROUP_PATTERNS.iter() {
         matches.extend(match_pattern(molecule, pattern));
     }
 
@@ -262,7 +262,7 @@ fn match_pattern_atom(
         return;
     }
 
-    let pattern_atom = pattern.atoms[pattern_atom_index];
+    let pattern_atom = &pattern.atoms[pattern_atom_index];
     for atom in molecule
         .atoms
         .iter()
@@ -271,7 +271,7 @@ fn match_pattern_atom(
         if used_atom_ids.contains(&atom.id) {
             continue;
         }
-        assignment.insert(pattern_atom.role, atom.id);
+        assignment.insert(pattern_atom.role.clone(), atom.id);
         used_atom_ids.insert(atom.id);
         if partial_assignment_matches_bonds(molecule, pattern, assignment) {
             match_pattern_atom(
@@ -310,10 +310,12 @@ fn build_match_from_assignment(
         atom_ids,
         attachment_atom_id: pattern
             .attachment
+            .as_ref()
             .and_then(|attachment| resolve_pattern_attachment(molecule, assignment, attachment)),
         reference_atom_id: pattern
             .reference
-            .and_then(|reference| assignment.get(&reference).copied()),
+            .as_ref()
+            .and_then(|reference| assignment.get(reference).copied()),
     })
 }
 
@@ -364,62 +366,87 @@ fn all_pattern_constraints_match(
     pattern: &FunctionalGroupPattern,
     assignment: &HashMap<PatternRole, u32>,
 ) -> bool {
-    pattern
-        .constraints
-        .iter()
-        .all(|constraint| match_pattern_constraint(molecule, assignment, *constraint))
+    pattern.constraints.iter().all(|constraint| {
+        neighbor_query_count(molecule, assignment, constraint) >= constraint.min_count
+    })
 }
 
-fn match_pattern_constraint(
+fn neighbor_query_count(
     molecule: &Molecule,
     assignment: &HashMap<PatternRole, u32>,
-    constraint: PatternConstraint,
-) -> bool {
-    match constraint {
-        PatternConstraint::HasHydrogenNeighbor { role } => assignment
-            .get(&role)
-            .is_some_and(|atom_id| has_hydrogen_neighbor(molecule, *atom_id)),
-        PatternConstraint::HasCarbonNeighborExcept { role, except } => {
-            let Some(atom_id) = assignment.get(&role) else {
-                return false;
-            };
-            let Some(except_atom_id) = assignment.get(&except) else {
-                return false;
-            };
-            carbon_neighbor_excluding(molecule, *atom_id, *except_atom_id).is_some()
-        }
-        PatternConstraint::CarbonNeighborCountAtLeast {
-            role,
-            count,
-            except,
-        } => {
-            let Some(atom_id) = assignment.get(&role) else {
-                return false;
-            };
-            let Some(except_atom_id) = assignment.get(&except) else {
-                return false;
-            };
-            carbon_neighbors(molecule, *atom_id)
-                .into_iter()
-                .filter(|neighbor_id| *neighbor_id != *except_atom_id)
-                .count()
-                >= count
-        }
-    }
+    query: &NeighborQuery,
+) -> usize {
+    let Some(from_atom_id) = assignment.get(&query.from).copied() else {
+        return 0;
+    };
+    let excluded_atom_ids = query
+        .exclude
+        .iter()
+        .filter_map(|role| assignment.get(role).copied())
+        .collect::<HashSet<_>>();
+
+    molecule
+        .bonds
+        .iter()
+        .filter(|bond| {
+            bond.atom_ids.contains(&from_atom_id)
+                && query
+                    .bond_order
+                    .is_none_or(|bond_order| bond.order == bond_order)
+        })
+        .filter_map(|bond| other_atom_id(bond, from_atom_id))
+        .filter(|neighbor_id| !excluded_atom_ids.contains(neighbor_id))
+        .filter(|neighbor_id| {
+            molecule
+                .atoms
+                .iter()
+                .find(|atom| atom.id == *neighbor_id)
+                .is_some_and(|atom| pattern_element_matches(query.element, atom))
+        })
+        .count()
+}
+
+fn first_neighbor_query_match(
+    molecule: &Molecule,
+    assignment: &HashMap<PatternRole, u32>,
+    query: &NeighborQuery,
+) -> Option<u32> {
+    let from_atom_id = assignment.get(&query.from).copied()?;
+    let excluded_atom_ids = query
+        .exclude
+        .iter()
+        .filter_map(|role| assignment.get(role).copied())
+        .collect::<HashSet<_>>();
+
+    molecule
+        .bonds
+        .iter()
+        .filter(|bond| {
+            bond.atom_ids.contains(&from_atom_id)
+                && query
+                    .bond_order
+                    .is_none_or(|bond_order| bond.order == bond_order)
+        })
+        .filter_map(|bond| other_atom_id(bond, from_atom_id))
+        .filter(|neighbor_id| !excluded_atom_ids.contains(neighbor_id))
+        .find(|neighbor_id| {
+            molecule
+                .atoms
+                .iter()
+                .find(|atom| atom.id == *neighbor_id)
+                .is_some_and(|atom| pattern_element_matches(query.element, atom))
+        })
 }
 
 fn resolve_pattern_attachment(
     molecule: &Molecule,
     assignment: &HashMap<PatternRole, u32>,
-    attachment: PatternAttachment,
+    attachment: &PatternAttachment,
 ) -> Option<u32> {
     match attachment {
-        PatternAttachment::Role(role) => assignment.get(&role).copied(),
-        PatternAttachment::CarbonNeighborOf { role } => {
-            carbon_neighbor(molecule, *assignment.get(&role)?)
-        }
-        PatternAttachment::CarbonNeighborOfExcept { role, except } => {
-            carbon_neighbor_excluding(molecule, *assignment.get(&role)?, *assignment.get(&except)?)
+        PatternAttachment::Role(role) => assignment.get(role).copied(),
+        PatternAttachment::Neighbor(query) => {
+            first_neighbor_query_match(molecule, assignment, query)
         }
     }
 }
@@ -453,27 +480,6 @@ fn element_neighbors(molecule: &Molecule, atom_id: u32, element: Element) -> Vec
         .filter_map(|bond| other_atom_id(bond, atom_id))
         .filter(|neighbor_id| atom_element(molecule, *neighbor_id) == Some(element))
         .collect()
-}
-
-fn has_hydrogen_neighbor(molecule: &Molecule, atom_id: u32) -> bool {
-    element_neighbors(molecule, atom_id, Element::H)
-        .into_iter()
-        .next()
-        .is_some()
-}
-
-fn carbon_neighbor(molecule: &Molecule, atom_id: u32) -> Option<u32> {
-    carbon_neighbors(molecule, atom_id).into_iter().next()
-}
-
-fn carbon_neighbor_excluding(
-    molecule: &Molecule,
-    atom_id: u32,
-    excluded_atom_id: u32,
-) -> Option<u32> {
-    carbon_neighbors(molecule, atom_id)
-        .into_iter()
-        .find(|neighbor_id| *neighbor_id != excluded_atom_id)
 }
 
 fn is_bonded(molecule: &Molecule, first_atom_id: u32, second_atom_id: u32) -> bool {
