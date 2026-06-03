@@ -61,6 +61,7 @@ button:disabled {
   display: grid;
   gap: 12px;
   padding: 14px;
+  width: 100vw;
 }
 
 .tool-head {
@@ -98,14 +99,14 @@ h2 {
 .workspace {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  grid-template-columns: minmax(0, 0.9fr) minmax(340px, 420px);
   min-height: 0;
 }
 
 .left-workspace {
   display: grid;
   gap: 16px;
-  grid-template-rows: minmax(330px, 1fr) minmax(220px, 0.55fr);
+  grid-template-rows: minmax(330px, 0.7fr) minmax(220px, 0.55fr);
   min-height: 0;
 }
 
