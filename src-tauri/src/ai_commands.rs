@@ -1,13 +1,70 @@
 use crate::domain::{
-    atom_index, atom_position, AiContext, AiResult, AtomIndexMapEntry, AtomSummary, Basis,
-    CalculationSummary, Command, GeometryEditMode, JobType, Method, Solvent,
+    AiContext, AiResult, AtomIndexMapEntry, AtomSummary, Basis, CalculationSummary, Command, Element,
+    GeometryEditMode, JobType, Method, Solvent,
 };
-use crate::gaussian::method_name;
-use crate::geometry::{dihedral_degrees, rotate, sub};
+use crate::functional_groups::{
+    element_neighbors, find_all_benzene_rings, get_ring_neighbors, match_functional_groups,
+    FunctionalGroupKind,
+};
+use std::collections::{HashMap, HashSet};
 
 pub fn build_ai_context(state: &crate::domain::AppState) -> AiContext {
     let molecule = &state.domain.chemical_spec.molecule;
     let calculation = &state.domain.chemical_spec.calculation;
+
+    let fg_matches = match_functional_groups(molecule);
+    let mut atom_to_contexts: HashMap<u32, Vec<String>> = HashMap::new();
+
+    // 1. 基本的な官能基マッチングの情報を格納
+    for m in &fg_matches {
+        let kind_str = format!("{:?}", m.kind);
+        let mut atoms_to_mark = m.atom_ids.clone();
+
+        // Alcoholの場合、水素もIn_Alcoholに含める
+        if m.kind == FunctionalGroupKind::Alcohol {
+            if let Some(o_id) = m.reference_atom_id {
+                let h_neighbors = element_neighbors(molecule, o_id, Element::H);
+                atoms_to_mark.extend(h_neighbors);
+            }
+        }
+
+        for &id in &atoms_to_mark {
+            atom_to_contexts
+                .entry(id)
+                .or_default()
+                .push(format!("In_{}", kind_str));
+        }
+    }
+
+    // 2. ベンゼン環の周辺原子へのコンテキスト伝播
+    // すべてのベンゼン環を検出して処理する
+    let benzene_matches: Vec<_> = fg_matches
+        .iter()
+        .filter(|m| m.kind == FunctionalGroupKind::BenzeneRing)
+        .collect();
+
+    for m in benzene_matches {
+        // m.atom_ids は環の炭素6つ
+        let ordered_ring = m.atom_ids.clone(); // 単純化: 順序付けは必須ではない場合もあるが、位置情報に依存するなら必要
+        
+        for (idx, (_ring_atom_id, neighbors)) in get_ring_neighbors(molecule, &ordered_ring)
+            .into_iter()
+            .enumerate()
+        {
+            for neighbor_id in neighbors {
+                atom_to_contexts
+                    .entry(neighbor_id)
+                    .or_default()
+                    .push(format!("BenzeneRing_{}th_position", idx + 1));
+            }
+        }
+    }
+
+    // ... (1. 基本的な官能基マッチングの情報を格納)
+    // ...
+    // 2. ベンゼン環の周辺原子へのコンテキスト伝播
+    // ...
+
     let atom_index_map = molecule
         .atoms
         .iter()
@@ -17,6 +74,13 @@ pub fn build_ai_context(state: &crate::domain::AppState) -> AiContext {
             atom_id: atom.id,
         })
         .collect::<Vec<_>>();
+
+    // atom_id -> display_index のマップを作成
+    let id_to_display: HashMap<u32, u32> = atom_index_map
+        .iter()
+        .map(|e| (e.atom_id, e.display_index))
+        .collect();
+
     let selected_atoms = state
         .ui
         .selected_atoms
@@ -34,13 +98,24 @@ pub fn build_ai_context(state: &crate::domain::AppState) -> AiContext {
                     nuclear_spin: atom.nuclear_spin,
                     formal_charge: atom.formal_charge,
                     position: atom.position,
+                    chemical_context: atom_to_contexts.get(&atom.id).map(|ctxs| ctxs.join(", ")),
                 })
         })
         .collect::<Vec<_>>();
 
+    // atom_id -> display_index -> context に変換
+    let atom_context_map: HashMap<u32, String> = atom_to_contexts
+        .into_iter()
+        .filter_map(|(id, ctxs)| {
+            let display_index = id_to_display.get(&id)?;
+            Some((*display_index, ctxs.join(", ")))
+        })
+        .collect();
+
     AiContext {
         selected_atoms,
         atom_index_map,
+        atom_context_map,
         calculation: CalculationSummary {
             job_type: calculation.job_type,
             method: calculation.method,
@@ -55,7 +130,7 @@ pub fn build_ai_context(state: &crate::domain::AppState) -> AiContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::reducer;
+    use crate::reducer::{self, infer_substitute_by_fragment_completion};
 
     #[test]
     fn local_geometry_rule_outputs_display_atom_ids() {
@@ -83,6 +158,95 @@ mod tests {
                 ..
             }]
         ));
+    }
+
+    #[test]
+    fn build_ai_context_includes_chemical_context() {
+        let mut state = reducer::initial_app_state();
+        // Setup benzoic acid-like structure for testing
+        state.domain.chemical_spec.molecule.atoms = vec![
+            crate::domain::Atom { id: 1, element: crate::domain::Element::C, isotope: None, nuclear_spin: None, formal_charge: 0, position: [0.0, 0.0, 0.0] },
+            crate::domain::Atom { id: 2, element: crate::domain::Element::O, isotope: None, nuclear_spin: None, formal_charge: 0, position: [1.2, 0.0, 0.0] },
+            crate::domain::Atom { id: 3, element: crate::domain::Element::O, isotope: None, nuclear_spin: None, formal_charge: 0, position: [0.0, 1.3, 0.0] },
+            crate::domain::Atom { id: 4, element: crate::domain::Element::H, isotope: None, nuclear_spin: None, formal_charge: 0, position: [0.0, 2.2, 0.0] },
+        ];
+        state.domain.chemical_spec.molecule.bonds = vec![
+            crate::domain::Bond { id: 1, atom_ids: [1, 2], order: 2 },
+            crate::domain::Bond { id: 2, atom_ids: [1, 3], order: 1 },
+            crate::domain::Bond { id: 3, atom_ids: [3, 4], order: 1 },
+        ];
+        state.ui.selected_atoms = vec![1];
+        
+        let context = build_ai_context(&state);
+        let atom = &context.selected_atoms[0];
+        assert_eq!(atom.display_index, 1);
+        assert!(atom.chemical_context.as_ref().is_some_and(|fg| fg.contains("CarboxylicAcid")));
+    }
+
+    #[test]
+    fn build_ai_context_includes_alcohol_hydrogen() {
+        let mut state = reducer::initial_app_state();
+        // Setup methanol: C-O-H
+        state.domain.chemical_spec.molecule.atoms = vec![
+            crate::domain::Atom { id: 1, element: crate::domain::Element::C, isotope: None, nuclear_spin: None, formal_charge: 0, position: [0.0, 0.0, 0.0] },
+            crate::domain::Atom { id: 2, element: crate::domain::Element::O, isotope: None, nuclear_spin: None, formal_charge: 0, position: [1.2, 0.0, 0.0] },
+            crate::domain::Atom { id: 3, element: crate::domain::Element::H, isotope: None, nuclear_spin: None, formal_charge: 0, position: [1.2, 0.9, 0.0] },
+        ];
+        state.domain.chemical_spec.molecule.bonds = vec![
+            crate::domain::Bond { id: 1, atom_ids: [1, 2], order: 1 },
+            crate::domain::Bond { id: 2, atom_ids: [2, 3], order: 1 },
+        ];
+        state.ui.selected_atoms = vec![3]; // Select H
+        
+        let context = build_ai_context(&state);
+        let h_atom_id = 3;
+        // Need to find display index for H atom (id 3)
+        let display_h = context.atom_index_map.iter().find(|e| e.atom_id == h_atom_id).unwrap().display_index;
+        
+        let context_str = context.atom_context_map.get(&display_h).expect("Should have context");
+        assert!(context_str.contains("In_Alcohol"));
+    }
+
+    fn build_4_hydroxybiphenyl() -> crate::domain::AppState {
+        use crate::reducer::{reduce, initial_app_state};
+        use crate::domain::{Command, Element};
+
+        let state = initial_app_state();
+        let state = reduce(state, Command::SubstituteByFragment { fragment_name: "phenyl".to_string(), start_atom_id: 2, end_atom_id: 1 });
+        let context = build_ai_context(&state);
+
+        let para_position = context
+            .atom_context_map
+            .iter()
+            .find(|(_, v)| **v == "BenzeneRing_4th_position")
+            .map(|(k, _)| *k)
+            .unwrap();
+
+
+        let para_position = display_index_to_atom_id(&context, para_position).unwrap();
+
+        let para_carbon = infer_substitute_by_fragment_completion(
+            &state.domain.chemical_spec.molecule,
+            para_position
+        )
+            .unwrap()
+            .end_atom_id;
+
+        reduce(state, Command::SubstituteByFragment { fragment_name: "phenyl".to_string(), start_atom_id: para_position, end_atom_id: para_carbon })
+    }
+
+    #[test]
+    fn build_ai_context_includes_biphenyl_context() {
+        let state = build_4_hydroxybiphenyl();
+        let context = build_ai_context(&state);
+        
+        let neighbor_contexts = context
+            .atom_context_map
+            .values()
+            .filter(|v| v.contains("BenzeneRing_"))
+            .count();
+
+        assert_eq!(neighbor_contexts, 12, "Should have marked exactly 12 substituent atoms with BenzeneRing_nth_position context. Found: {}", neighbor_contexts);
     }
 }
 
@@ -223,6 +387,7 @@ fn parse_json_ai_result(text: &str) -> Option<AiResult> {
 //             | Command::DeleteAtom { .. }
 //             | Command::AddBond { .. }
 //             | Command::DeleteBond { .. }
+//             | Command::ReplaceAtom { .. }
 //     )
 // }
 
@@ -377,6 +542,10 @@ fn resolve_command_atom_references(
         Command::ToggleAtomSelection { atom_id } => Command::ToggleAtomSelection {
             atom_id: resolve_display_index(context, atom_id)?,
         },
+        Command::ReplaceAtom { atom_id, element } => Command::ReplaceAtom {
+            atom_id: resolve_display_index(context, atom_id)?,
+            element,
+        },
         other => other,
     };
     Ok(resolved)
@@ -470,7 +639,8 @@ fn dedupe_commands_by_rules(commands: Vec<Command>) -> Vec<Command> {
             | Command::DeleteBond { .. }
             | Command::PlaceTemplate { .. }
             | Command::AttachFragment { .. }
-            | Command::SubstituteByFragment { .. } => unique.push(command),
+            | Command::SubstituteByFragment { .. }
+            | Command::ReplaceAtom { .. } => unique.push(command),
             Command::SetMolecule { .. }
             | Command::ToggleAtomSelection { .. }
             | Command::ClearSelection => {}

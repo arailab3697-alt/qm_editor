@@ -1,0 +1,18 @@
+{
+  "name": "formyl",
+  "displayName": "Formyl Group",
+  "description": "A CHO formyl group fragment.",
+  "templateName": "formaldehyde",
+  "attachPorts": [
+    {
+      "id": "h1",
+      "portType": { "atom": { "targetId": 2 } },
+      "recommendedUsage": "ATTACH"
+    },
+    {
+      "id": "bond1",
+      "portType": { "bond": { "startAtomId": 1, "endAtomId": 2 } },
+      "recommendedUsage": "SUBSTITUTE"
+    }
+  ]
+}

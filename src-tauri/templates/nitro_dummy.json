@@ -1,0 +1,72 @@
+{
+  "name": "nitro_dummy",
+  "displayName": "nitro_dummy",
+  "description": "dummy nitro molecule",
+  "molecule": {
+    "name": "nitro_dummy",
+    "atoms": [
+      {
+        "id": 1,
+        "element": "N",
+        "position": [
+          -0.99963969,
+          0.87157775,
+          0.1205065
+        ]
+      },
+      {
+        "id": 2,
+        "element": "O",
+        "position": [
+          0.23796031,
+          0.87157775,
+          0.1205065
+        ]
+      },
+      {
+        "id": 3,
+        "element": "O",
+        "position": [
+          -1.61843969,
+          1.94337079,
+          0.1205065
+        ]
+      },
+      {
+        "id": 4,
+        "element": "H",
+        "position": [
+          -1.59162269,
+          -0.15597036,
+          0.18779941
+        ]
+      }
+    ],
+    "bonds": [
+      {
+        "id": 1,
+        "atomIds": [
+          1,
+          2
+        ],
+        "order": 2
+      },
+      {
+        "id": 2,
+        "atomIds": [
+          1,
+          3
+        ],
+        "order": 2
+      },
+      {
+        "id": 3,
+        "atomIds": [
+          1,
+          4
+        ],
+        "order": 1
+      }
+    ]
+  }
+}

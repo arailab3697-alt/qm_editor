@@ -460,6 +460,10 @@ pub enum Command {
         start_atom_id: u32,
         end_atom_id: u32,
     },
+    ReplaceAtom {
+        atom_id: u32,
+        element: Element,
+    },
     SetMolecule {
         molecule: Molecule,
     },
@@ -501,6 +505,7 @@ pub struct AtomSummary {
     pub nuclear_spin: Option<TwiceSpin>,
     pub formal_charge: i32,
     pub position: [f64; 3],
+    pub chemical_context: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -526,6 +531,7 @@ pub struct CalculationSummary {
 pub struct AiContext {
     pub selected_atoms: Vec<AtomSummary>,
     pub atom_index_map: Vec<AtomIndexMapEntry>,
+    pub atom_context_map: std::collections::HashMap<u32, String>,
     pub calculation: CalculationSummary,
 }
 

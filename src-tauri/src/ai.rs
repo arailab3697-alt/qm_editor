@@ -353,6 +353,7 @@ struct AiVisibleUi {
 struct AiVisibleContext {
     selected_atoms: Vec<AtomSummary>,
     atom_index_map: Vec<AiVisibleAtomIndexMapEntry>,
+    atom_context_map: std::collections::HashMap<u32, String>,
     calculation: CalculationSummary,
 }
 
@@ -375,6 +376,7 @@ fn build_prompt(
         context: build_ai_visible_context(context),
         screenshot: screenshot.as_deref(),
     };
+    println!("{:?}", payload.context.atom_context_map);
     serde_json::to_string_pretty(&payload).map_err(|error| error.to_string())
 }
 
@@ -389,6 +391,7 @@ fn build_ai_visible_context(context: &AiContext) -> AiVisibleContext {
                 atom_id: entry.display_index,
             })
             .collect(),
+        atom_context_map: context.atom_context_map.clone(),
         calculation: context.calculation.clone(),
     }
 }
@@ -581,5 +584,31 @@ mod tests {
                 { "displayIndex": 3, "atomId": 3 }
             ])
         );
+    }
+
+    #[test]
+    fn prompt_context_includes_chemical_context() {
+        let mut state = reducer::initial_app_state();
+        // Setup benzoic acid-like structure for testing
+        state.domain.chemical_spec.molecule.atoms = vec![
+            crate::domain::Atom { id: 1, element: crate::domain::Element::C, isotope: None, nuclear_spin: None, formal_charge: 0, position: [0.0, 0.0, 0.0] },
+            crate::domain::Atom { id: 2, element: crate::domain::Element::O, isotope: None, nuclear_spin: None, formal_charge: 0, position: [1.2, 0.0, 0.0] },
+            crate::domain::Atom { id: 3, element: crate::domain::Element::O, isotope: None, nuclear_spin: None, formal_charge: 0, position: [0.0, 1.3, 0.0] },
+            crate::domain::Atom { id: 4, element: crate::domain::Element::H, isotope: None, nuclear_spin: None, formal_charge: 0, position: [0.0, 2.2, 0.0] },
+        ];
+        state.domain.chemical_spec.molecule.bonds = vec![
+            crate::domain::Bond { id: 1, atom_ids: [1, 2], order: 2 },
+            crate::domain::Bond { id: 2, atom_ids: [1, 3], order: 1 },
+            crate::domain::Bond { id: 3, atom_ids: [3, 4], order: 1 },
+        ];
+        state.ui.selected_atoms = vec![1];
+
+        let context = ai_commands::build_ai_context(&state);
+        let prompt = build_prompt("inspect", &state, &context, None).expect("prompt should build");
+        let json: serde_json::Value = serde_json::from_str(&prompt).expect("prompt should be JSON");
+
+        let selected_atom = &json["context"]["selectedAtoms"][0];
+        assert!(selected_atom["chemicalContext"].is_string());
+        assert!(selected_atom["chemicalContext"].as_str().unwrap().contains("CarboxylicAcid"));
     }
 }

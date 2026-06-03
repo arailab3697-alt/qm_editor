@@ -53,6 +53,13 @@ pub fn match_functional_groups(molecule: &Molecule) -> Vec<FunctionalGroupMatch>
     dedupe_matches(matches)
 }
 
+pub fn find_all_benzene_rings(molecule: &Molecule) -> Vec<Vec<u32>> {
+    find_benzene_rings(molecule)
+        .into_iter()
+        .map(|ring| ring.to_vec())
+        .collect()
+}
+
 pub fn ordered_benzene_ring_carbons(molecule: &Molecule) -> Option<Vec<u32>> {
     find_benzene_rings(molecule)
         .into_iter()
@@ -120,11 +127,17 @@ fn best_substituent_priority_at_ring_atom(
     ring_set: &HashSet<u32>,
     ring_atom_id: u32,
 ) -> u8 {
-    match_functional_groups(molecule)
+    let mut matches = match_functional_groups(molecule);
+    
+    // BenzeneRingのマッチを探す
+    let benzene_matches: Vec<_> = matches.iter().filter(|m| m.kind == FunctionalGroupKind::BenzeneRing).collect();
+
+    matches
         .into_iter()
-        .filter(|group_match| group_match.kind != FunctionalGroupKind::BenzeneRing)
         .filter_map(|group_match| {
             let attachment = group_match.attachment_atom_id?;
+            
+            // ベンゼン環同士の結合を考慮するため、kindのチェックを外す
             if attachment == ring_atom_id
                 || group_match.atom_ids.iter().any(|atom_id| {
                     !ring_set.contains(atom_id) && is_bonded(molecule, *atom_id, ring_atom_id)
@@ -155,7 +168,7 @@ fn functional_group_priority(kind: FunctionalGroupKind) -> u8 {
         FunctionalGroupKind::Ether => 11,
         FunctionalGroupKind::Halogen => 12,
         FunctionalGroupKind::Nitro => 13,
-        FunctionalGroupKind::BenzeneRing => u8::MAX,
+        FunctionalGroupKind::BenzeneRing => 14, // 最低優先度として扱う
     }
 }
 
@@ -468,11 +481,29 @@ fn dedupe_matches(matches: Vec<FunctionalGroupMatch>) -> Vec<FunctionalGroupMatc
         .collect()
 }
 
+pub fn get_ring_neighbors(molecule: &Molecule, ring: &[u32]) -> Vec<(u32, Vec<u32>)> {
+    let ring_set: HashSet<u32> = ring.iter().copied().collect();
+    ring.iter()
+        .map(|&ring_atom_id| {
+            let neighbors = molecule
+                .bonds
+                .iter()
+                .filter(|b| b.atom_ids.contains(&ring_atom_id))
+                .filter_map(|b| {
+                    let neighbor = if b.atom_ids[0] == ring_atom_id { b.atom_ids[1] } else { b.atom_ids[0] };
+                    if !ring_set.contains(&neighbor) { Some(neighbor) } else { None }
+                })
+                .collect();
+            (ring_atom_id, neighbors)
+        })
+        .collect()
+}
+
 fn carbon_neighbors(molecule: &Molecule, atom_id: u32) -> Vec<u32> {
     element_neighbors(molecule, atom_id, Element::C)
 }
 
-fn element_neighbors(molecule: &Molecule, atom_id: u32, element: Element) -> Vec<u32> {
+pub fn element_neighbors(molecule: &Molecule, atom_id: u32, element: Element) -> Vec<u32> {
     molecule
         .bonds
         .iter()

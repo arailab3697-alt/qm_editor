@@ -218,6 +218,14 @@ pub fn reduce(mut state: AppState, command: Command) -> AppState {
                 state.ui.selected_atoms.push(atom_id);
             }
         }
+        Command::ReplaceAtom { atom_id, element } => {
+            if let Some(index) = atom_index(&state.domain.chemical_spec.molecule, atom_id) {
+                let atom = &mut state.domain.chemical_spec.molecule.atoms[index];
+                atom.element = element;
+                atom.isotope = None;
+                atom.nuclear_spin = None;
+            }
+        }
         Command::ClearSelection => state.ui.selected_atoms.clear(),
     }
     state
@@ -662,6 +670,7 @@ pub fn substitute_by_fragment(
     use std::collections::{HashMap, HashSet};
 
     let fragments = crate::fragments::list_available_fragments();
+    println!("{:?}", fragments);
 
     let Some(fragment) = fragments.iter().find(|f| f.name == fragment_name) else {
         return;
@@ -747,29 +756,63 @@ pub fn substitute_by_fragment(
     let fragment_vec =
         normalize(sub(retained_pos, consumed_pos)).expect("fragment bond must be valid");
 
-    let rotation = rotation_from_to(fragment_vec, target_vec);
+    let base_rotation = rotation_from_to(fragment_vec, target_vec);
 
-    // Rotate around consumed atom
-    for atom in &mut template.atoms {
-        let local = sub(atom.position, consumed_pos);
+    // Optimize rotation around bond axis (target_vec)
+    let mut best_angle = 0.0;
+    let mut min_repulsion = f64::MAX;
 
-        let rotated = rotate_vec(rotation, local);
-
-        atom.position = add(rotated, consumed_pos);
+    // Two-pass search: 16 steps (22.5 deg) then 16 steps around the best angle
+    let mut current_center = 0.0;
+    let mut step = 22.5 * std::f64::consts::PI / 180.0;
+    
+    for _pass in 0..2 {
+        let mut best_pass_angle = current_center;
+        
+        for i in 0..16 {
+            let angle = current_center - 8.0 * step + (i as f64) * step;
+            
+            let mut total_repulsion = 0.0;
+            
+            // Calculate trial positions
+            for atom in &template.atoms {
+                if atom.id == consumed_atom_id { continue; }
+                
+                let local = sub(atom.position, consumed_pos);
+                let rotated_base = rotate_vec(base_rotation, local);
+                let rotated = rotate(rotated_base, target_vec, angle);
+                let trial_pos = add(rotated, sub(target_retained_pos, rotate_vec(base_rotation, sub(retained_pos, consumed_pos))));
+                
+                for mol_atom in &molecule.atoms {
+                    total_repulsion += crate::geometry::repulsion_potential(
+                        trial_pos, 
+                        atom.element, 
+                        mol_atom.position, 
+                        mol_atom.element
+                    );
+                }
+            }
+            
+            if total_repulsion < min_repulsion {
+                min_repulsion = total_repulsion;
+                best_pass_angle = angle;
+            }
+        }
+        current_center = best_pass_angle;
+        step /= 16.0; // Refine step
+        best_angle = current_center;
     }
 
-    // Translate consumed atom onto target consumed atom
-    let transformed_consumed_pos = template
-        .atoms
-        .iter()
-        .find(|a| a.id == consumed_atom_id)
-        .map(|a| a.position)
-        .unwrap_or(consumed_pos);
+    // Apply best rotation and placement
 
-    let shift = sub(target_retained_pos, transformed_consumed_pos);
-
+    // Apply best rotation and placement
     for atom in &mut template.atoms {
-        atom.position = add(atom.position, shift);
+        let local = sub(atom.position, consumed_pos);
+        let rotated_base = rotate_vec(base_rotation, local);
+        let rotated = rotate(rotated_base, target_vec, best_angle);
+        
+        let shift = sub(target_consumed_pos, rotate_vec(base_rotation, sub(retained_pos, consumed_pos)));
+        atom.position = add(rotated, shift);
     }
 
     // ------------------------------------------------------------
@@ -792,7 +835,7 @@ pub fn substitute_by_fragment(
 
         molecule.atoms.push(Atom {
             id: next_atom,
-            element: atom.element.clone(),
+            element: atom.element,
             position: atom.position,
             isotope: atom.isotope,
             nuclear_spin: atom.nuclear_spin,
@@ -1106,6 +1149,24 @@ mod tests {
         );
 
         assert_eq!(state.ui.selected_atoms, vec![1]);
+    }
+
+    #[test]
+    fn replace_atom_updates_element_and_clears_isotope() {
+        let mut state = initial_app_state();
+        state.domain.chemical_spec.molecule.atoms[0].isotope = Some(MassNumber(18));
+        
+        let state = reduce(
+            state,
+            Command::ReplaceAtom {
+                atom_id: 1,
+                element: Element::N,
+            },
+        );
+
+        let atom = &state.domain.chemical_spec.molecule.atoms[0];
+        assert_eq!(atom.element, Element::N);
+        assert_eq!(atom.isotope, None);
     }
 
     #[test]

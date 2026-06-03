@@ -85,6 +85,32 @@ pub fn covalent_radius(element: Element) -> f64 {
     }
 }
 
+pub fn vdw_radius(element: Element) -> f64 {
+    match element {
+        Element::H => 1.20,
+        Element::C => 1.70,
+        Element::N => 1.55,
+        Element::O => 1.52,
+        Element::F => 1.47,
+        Element::P => 1.80,
+        Element::S => 1.80,
+        Element::Cl => 1.75,
+        Element::Br => 1.85,
+        Element::I => 1.98,
+        _ => 1.70, // Default
+    }
+}
+
+pub fn repulsion_potential(pos_a: [f64; 3], el_a: Element, pos_b: [f64; 3], el_b: Element) -> f64 {
+    let r_a = vdw_radius(el_a);
+    let r_b = vdw_radius(el_b);
+    let dist = distance(pos_a, pos_b);
+    if dist < 0.1 { return 1000.0; } // Avoid division by zero
+    let sigma = r_a + r_b;
+    // Simple 1/r^6 repulsion potential
+    (sigma / dist).powi(6)
+}
+
 pub fn rotation_from_to(from: [f64; 3], to: [f64; 3]) -> [[f64; 3]; 3] {
     let axis = cross(from, to);
     let s = length(axis);

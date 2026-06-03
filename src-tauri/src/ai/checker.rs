@@ -116,6 +116,7 @@ impl Validator {
                     Some(vec![*start_atom_id, *end_atom_id])
                 }
                 Command::ToggleAtomSelection { atom_id } => Some(vec![*atom_id]),
+                Command::ReplaceAtom { atom_id, .. } => Some(vec![*atom_id]),
                 _ => None,
             };
 
