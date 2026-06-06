@@ -740,9 +740,12 @@ function NumberTextField({
 
 type YoloStepStatus = "pending" | "running" | "applied" | "skipped" | "failed";
 
-type YoloStep = {
+type YoloPlanStep = {
   id: number;
   goal: string;
+};
+
+type YoloStep = YoloPlanStep & {
   status: YoloStepStatus;
   prompt?: string;
   beforeScreenshot?: string;
@@ -750,6 +753,18 @@ type YoloStep = {
   commands?: AICommand[];
   explanation?: string;
   error?: string;
+};
+
+type YoloStepHistoryEntry = {
+  stepId: number;
+  goal: string;
+  status: string;
+  explanation: string;
+  commands: AICommand[];
+};
+
+type YoloStepProposal = AIResult & {
+  prompt: string;
 };
 
 function AIAssistant() {
@@ -801,26 +816,29 @@ function AIAssistant() {
     setLoading(true);
     setYoloRunning(true);
 
-    const plan = buildYoloPlan(request);
-    setYoloSteps(plan);
-
-    const history: string[] = [];
     try {
+      const plan = await invoke<YoloPlanStep[]>("plan_yolo_steps_tauri", { input: request });
+      const plannedSteps = plan.map((step) => ({ ...step, status: "pending" as const }));
+      setYoloSteps(plannedSteps);
+
+      const history: YoloStepHistoryEntry[] = [];
       for (const step of plan) {
         const liveState = useAppStore.getState().state;
         if (!liveState) throw new Error("Editor state is not available.");
 
+        const stepPlan = { id: step.id, goal: step.goal };
         const beforeScreenshot = captureScreenshot();
-        const prompt = buildYoloStepPrompt(request, step, plan, history);
-        setYoloSteps((current) =>
-          updateYoloStep(current, step.id, { status: "running", prompt, beforeScreenshot }),
-        );
+        setYoloSteps((current) => updateYoloStep(current, step.id, { status: "running", beforeScreenshot }));
 
-        const proposal = await invoke<AIResult>("propose_commands_via_ai_tauri", {
-          input: prompt,
+        const proposal = await invoke<YoloStepProposal>("propose_yolo_step_tauri", {
+          input: request,
           state: liveState,
           screenshot: beforeScreenshot,
+          plan,
+          step: stepPlan,
+          history,
         });
+        setYoloSteps((current) => updateYoloStep(current, step.id, { prompt: proposal.prompt }));
 
         if (proposal.resolvedCommands.length > 0) {
           await applyCommands(proposal.resolvedCommands);
@@ -829,11 +847,13 @@ function AIAssistant() {
 
         const afterScreenshot = captureScreenshot();
         const status: YoloStepStatus = proposal.resolvedCommands.length > 0 ? "applied" : "skipped";
-        history.push(
-          `Step ${step.id} (${step.goal}) ${status}: ${proposal.explanation}. Commands: ${JSON.stringify(
-            proposal.commands,
-          )}`,
-        );
+        history.push({
+          stepId: step.id,
+          goal: step.goal,
+          status,
+          explanation: proposal.explanation,
+          commands: proposal.commands,
+        });
         setYoloSteps((current) =>
           updateYoloStep(current, step.id, {
             status,
@@ -936,35 +956,6 @@ function ScreenshotThumb({ label, src }: { label: string; src: string }) {
       <figcaption>{label}</figcaption>
     </figure>
   );
-}
-
-function buildYoloPlan(request: string): YoloStep[] {
-  const explicitTasks = request
-    .split(/[\n。.!?]+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .slice(0, 6);
-  const goals = explicitTasks.length > 1 ? explicitTasks : [request.trim(), "Verify the applied editor state and make one corrective command batch if needed"];
-
-  return goals.map((goal, index) => ({
-    id: index + 1,
-    goal,
-    status: "pending",
-  }));
-}
-
-function buildYoloStepPrompt(originalRequest: string, step: YoloStep, plan: YoloStep[], history: string[]) {
-  return [
-    "YOLO MODE: act as an agentic Gaussian input editor.",
-    "You are executing one subtask now. Use the provided screenshot plus current state, propose only the commands for this subtask, and keep the explanation concise.",
-    "If this subtask is already satisfied in the current state, return zero commands and explain that it is already satisfied.",
-    "Do not ask the user for confirmation in YOLO mode; choose the safest chemically reasonable command batch available.",
-    `Original request: ${originalRequest}`,
-    `Plan: ${plan.map((item) => `${item.id}. ${item.goal}`).join(" | ")}`,
-    `Current subtask ${step.id}/${plan.length}: ${step.goal}`,
-    history.length > 0 ? `Previous applied subtasks: ${history.join("\n")}` : "Previous applied subtasks: none",
-    "Return the normal raw JSON command response for this one subtask only.",
-  ].join("\n");
 }
 
 function updateYoloStep(steps: YoloStep[], id: number, patch: Partial<YoloStep>) {

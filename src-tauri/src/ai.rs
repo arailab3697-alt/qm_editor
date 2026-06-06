@@ -12,7 +12,7 @@ use checker::Checker;
 use crate::ai_commands::{parse_ai_result_json, propose_commands_by_rules as propose_by_rules};
 use crate::domain::{
     AiContext, AiResult, AppState, AtomSummary, CalculationSpec, CalculationSummary, Element,
-    FragmentDefinition, MassNumber, TwiceSpin,
+    FragmentDefinition, MassNumber, TwiceSpin, YoloPlanStep, YoloStepHistoryEntry,
 };
 use crate::fragments;
 use crate::templates;
@@ -219,6 +219,94 @@ pub async fn propose_commands_via_ai(
     match AiProvider::from_env()? {
         AiProvider::GoogleGemini => propose_with_gemini(input, _state, context, screenshot).await,
     }
+}
+
+pub fn build_yolo_plan(input: &str) -> Vec<YoloPlanStep> {
+    let explicit_tasks = input
+        .split(|ch: char| matches!(ch, '\n' | '。' | '.' | '!' | '?'))
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .take(6)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+    let goals = if explicit_tasks.len() > 1 {
+        explicit_tasks
+    } else {
+        vec![
+            input.trim().to_string(),
+            "Verify the applied editor state and make one corrective command batch if needed"
+                .to_string(),
+        ]
+    };
+
+    goals
+        .into_iter()
+        .enumerate()
+        .map(|(index, goal)| YoloPlanStep {
+            id: index as u32 + 1,
+            goal,
+        })
+        .collect()
+}
+
+pub async fn propose_yolo_step_commands(
+    original_request: &str,
+    state: &AppState,
+    context: &AiContext,
+    screenshot: Option<String>,
+    plan: &[YoloPlanStep],
+    step: &YoloPlanStep,
+    history: &[YoloStepHistoryEntry],
+) -> Result<(String, AiResult), String> {
+    let prompt = build_yolo_step_prompt(original_request, plan, step, history);
+    let result = propose_commands_via_ai(&prompt, state, context, screenshot).await?;
+    Ok((prompt, result))
+}
+
+fn build_yolo_step_prompt(
+    original_request: &str,
+    plan: &[YoloPlanStep],
+    step: &YoloPlanStep,
+    history: &[YoloStepHistoryEntry],
+) -> String {
+    let plan_text = plan
+        .iter()
+        .map(|item| format!("{}. {}", item.id, item.goal))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let history_text = if history.is_empty() {
+        "Previous applied subtasks: none".to_string()
+    } else {
+        format!(
+            "Previous applied subtasks: {}",
+            history
+                .iter()
+                .map(|entry| format!(
+                    "Step {} ({}) {}: {}. Commands: {}",
+                    entry.step_id,
+                    entry.goal,
+                    entry.status,
+                    entry.explanation,
+                    serde_json::to_string(&entry.commands).unwrap_or_else(|_| "[]".to_string())
+                ))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+
+    [
+        "YOLO MODE: act as an agentic Gaussian input editor.".to_string(),
+        "You are executing one subtask now. Use the provided screenshot plus current state, propose only the commands for this subtask, and keep the explanation concise.".to_string(),
+        "If this subtask is already satisfied in the current state, return zero commands and explain that it is already satisfied.".to_string(),
+        "Do not ask the user for confirmation in YOLO mode; choose the safest chemically reasonable command batch available.".to_string(),
+        format!("Original request: {original_request}"),
+        format!("Plan: {plan_text}"),
+        format!("Current subtask {}/{}: {}", step.id, plan.len(), step.goal),
+        history_text,
+        "Return the normal raw JSON command response for this one subtask only.".to_string(),
+    ]
+    .join("\n")
 }
 
 fn local_result_for_supported_request(input: &str, context: &AiContext) -> Option<AiResult> {
@@ -593,15 +681,55 @@ mod tests {
         let mut state = reducer::initial_app_state();
         // Setup benzoic acid-like structure for testing
         state.domain.chemical_spec.molecule.atoms = vec![
-            crate::domain::Atom { id: 1, element: crate::domain::Element::C, isotope: None, nuclear_spin: None, formal_charge: 0, position: [0.0, 0.0, 0.0] },
-            crate::domain::Atom { id: 2, element: crate::domain::Element::O, isotope: None, nuclear_spin: None, formal_charge: 0, position: [1.2, 0.0, 0.0] },
-            crate::domain::Atom { id: 3, element: crate::domain::Element::O, isotope: None, nuclear_spin: None, formal_charge: 0, position: [0.0, 1.3, 0.0] },
-            crate::domain::Atom { id: 4, element: crate::domain::Element::H, isotope: None, nuclear_spin: None, formal_charge: 0, position: [0.0, 2.2, 0.0] },
+            crate::domain::Atom {
+                id: 1,
+                element: crate::domain::Element::C,
+                isotope: None,
+                nuclear_spin: None,
+                formal_charge: 0,
+                position: [0.0, 0.0, 0.0],
+            },
+            crate::domain::Atom {
+                id: 2,
+                element: crate::domain::Element::O,
+                isotope: None,
+                nuclear_spin: None,
+                formal_charge: 0,
+                position: [1.2, 0.0, 0.0],
+            },
+            crate::domain::Atom {
+                id: 3,
+                element: crate::domain::Element::O,
+                isotope: None,
+                nuclear_spin: None,
+                formal_charge: 0,
+                position: [0.0, 1.3, 0.0],
+            },
+            crate::domain::Atom {
+                id: 4,
+                element: crate::domain::Element::H,
+                isotope: None,
+                nuclear_spin: None,
+                formal_charge: 0,
+                position: [0.0, 2.2, 0.0],
+            },
         ];
         state.domain.chemical_spec.molecule.bonds = vec![
-            crate::domain::Bond { id: 1, atom_ids: [1, 2], order: 2 },
-            crate::domain::Bond { id: 2, atom_ids: [1, 3], order: 1 },
-            crate::domain::Bond { id: 3, atom_ids: [3, 4], order: 1 },
+            crate::domain::Bond {
+                id: 1,
+                atom_ids: [1, 2],
+                order: 2,
+            },
+            crate::domain::Bond {
+                id: 2,
+                atom_ids: [1, 3],
+                order: 1,
+            },
+            crate::domain::Bond {
+                id: 3,
+                atom_ids: [3, 4],
+                order: 1,
+            },
         ];
         state.ui.selected_atoms = vec![1];
 
@@ -611,6 +739,9 @@ mod tests {
 
         let selected_atom = &json["context"]["selectedAtoms"][0];
         assert!(selected_atom["chemicalContext"].is_string());
-        assert!(selected_atom["chemicalContext"].as_str().unwrap().contains("CarboxylicAcid"));
+        assert!(selected_atom["chemicalContext"]
+            .as_str()
+            .unwrap()
+            .contains("CarboxylicAcid"));
     }
 }

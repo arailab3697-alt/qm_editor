@@ -565,6 +565,32 @@ pub struct AiRepairPolicy {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct YoloPlanStep {
+    pub id: u32,
+    pub goal: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YoloStepHistoryEntry {
+    pub step_id: u32,
+    pub goal: String,
+    pub status: String,
+    pub explanation: String,
+    pub commands: Vec<Command>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YoloStepProposal {
+    pub prompt: String,
+    pub commands: Vec<Command>,
+    pub resolved_commands: Vec<Command>,
+    pub explanation: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AiProposal {
     pub commands: Vec<Command>,
     pub resolved_commands: Vec<Command>,
