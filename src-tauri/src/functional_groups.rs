@@ -4,9 +4,10 @@ use crate::functional_group_patterns::{
     FUNCTIONAL_GROUP_PATTERNS,
 };
 use serde::Serialize;
+use specta::Type;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum FunctionalGroupKind {
     BenzeneRing,
@@ -26,7 +27,7 @@ pub enum FunctionalGroupKind {
     Nitro,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FunctionalGroupMatch {
     pub kind: FunctionalGroupKind,

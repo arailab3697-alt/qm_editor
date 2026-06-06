@@ -1,9 +1,10 @@
 use crate::domain::Molecule;
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::fs;
 use std::path::Path;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TemplateDefinition {
     pub name: String,
@@ -12,7 +13,7 @@ pub struct TemplateDefinition {
     pub molecule: Molecule,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TemplateSummary {
     pub name: String,

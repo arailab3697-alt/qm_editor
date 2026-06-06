@@ -1,33 +1,34 @@
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::cmp::Ordering;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AppState {
     pub domain: DomainState,
     pub ui: UiState,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DomainState {
     pub chemical_spec: ChemicalSpec,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct UiState {
     pub selected_atoms: Vec<u32>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChemicalSpec {
     pub molecule: Molecule,
     pub calculation: CalculationSpec,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Molecule {
     pub name: String,
@@ -35,7 +36,7 @@ pub struct Molecule {
     pub bonds: Vec<Bond>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Atom {
     pub id: u32,
@@ -47,7 +48,7 @@ pub struct Atom {
     pub position: [f64; 3],
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Bond {
     pub id: u32,
@@ -55,18 +56,18 @@ pub struct Bond {
     pub order: u8,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Type)]
 pub struct Electronegativity(pub f64);
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Type)]
 #[serde(transparent)]
 pub struct MassNumber(pub u16);
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Type)]
 #[serde(transparent)]
 pub struct TwiceSpin(pub u8);
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Type)]
 pub enum Element {
     H,
     #[serde(rename = "He")]
@@ -292,7 +293,7 @@ pub enum Element {
     Og,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CalculationSpec {
     pub job_type: JobType,
@@ -303,7 +304,7 @@ pub struct CalculationSpec {
     pub multiplicity: u32,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Type)]
 pub enum JobType {
     #[serde(rename = "opt")]
     Opt,
@@ -315,13 +316,13 @@ pub enum JobType {
     Ts,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Type)]
 pub enum Method {
     B3LYP,
     WB97XD,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Type)]
 pub enum Basis {
     #[serde(rename = "6-31G(d)")]
     Six31Gd,
@@ -331,13 +332,13 @@ pub enum Basis {
     Def2Tzvp,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Type)]
 pub enum Solvent {
     THF,
     Water,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum PortType {
     #[serde(rename_all = "camelCase")]
@@ -349,7 +350,7 @@ pub enum PortType {
     },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachPort {
     pub id: String,
@@ -357,7 +358,7 @@ pub struct AttachPort {
     pub recommended_usage: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FragmentDefinitionFile {
     pub name: String,
@@ -367,7 +368,7 @@ pub struct FragmentDefinitionFile {
     pub attach_ports: Vec<AttachPort>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FragmentDefinition {
     pub name: String,
@@ -378,7 +379,7 @@ pub struct FragmentDefinition {
     pub attach_ports: Vec<AttachPort>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(
     tag = "type",
     rename_all = "SCREAMING_SNAKE_CASE",
@@ -473,7 +474,7 @@ pub enum Command {
     ClearSelection,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default, Type)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GeometryEditMode {
     #[default]
@@ -482,21 +483,21 @@ pub enum GeometryEditMode {
     MoveBothSides,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidationMessage {
     pub level: ValidationLevel,
     pub message: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SubstituteByFragmentCompletion {
     pub start_atom_id: u32,
     pub end_atom_id: u32,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AtomSummary {
     pub display_index: u32,
@@ -508,14 +509,14 @@ pub struct AtomSummary {
     pub chemical_context: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AtomIndexMapEntry {
     pub display_index: u32,
     pub atom_id: u32,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CalculationSummary {
     pub job_type: JobType,
@@ -526,7 +527,7 @@ pub struct CalculationSummary {
     pub multiplicity: u32,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiContext {
     pub selected_atoms: Vec<AtomSummary>,
@@ -535,42 +536,42 @@ pub struct AiContext {
     pub calculation: CalculationSummary,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiResult {
     pub commands: Vec<Command>,
     pub explanation: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiOutput {
     pub result: AiResult,
     pub ignored_warning: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiDiagnostic {
     pub diagnostics: Vec<String>,
     pub repair_policy: AiRepairPolicy,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiRepairPolicy {
     pub fix_error: bool,
     pub fix_warning: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct YoloPlanStep {
     pub id: u32,
     pub goal: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct YoloStepHistoryEntry {
     pub step_id: u32,
@@ -580,7 +581,7 @@ pub struct YoloStepHistoryEntry {
     pub commands: Vec<Command>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct YoloStepProposal {
     pub prompt: String,
@@ -589,7 +590,7 @@ pub struct YoloStepProposal {
     pub explanation: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiProposal {
     pub commands: Vec<Command>,
@@ -597,7 +598,7 @@ pub struct AiProposal {
     pub explanation: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum ValidationLevel {
     Error,
