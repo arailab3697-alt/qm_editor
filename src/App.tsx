@@ -3,7 +3,7 @@ import { createViewer, type AtomSpec, type GLViewer } from "3dmol";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import { useAppStore } from "./app/store";
-import type { AIResult } from "./domain/commands";
+import type { AICommand, AIResult } from "./domain/commands";
 import {
   supportedBases,
   supportedElements,
@@ -738,12 +738,28 @@ function NumberTextField({
   );
 }
 
+type YoloStepStatus = "pending" | "running" | "applied" | "skipped" | "failed";
+
+type YoloStep = {
+  id: number;
+  goal: string;
+  status: YoloStepStatus;
+  prompt?: string;
+  beforeScreenshot?: string;
+  afterScreenshot?: string;
+  commands?: AICommand[];
+  explanation?: string;
+  error?: string;
+};
+
 function AIAssistant() {
   const { state, applyCommands, undo, canUndo } = useAppStore();
   const [request, setRequest] = useState("");
   const [result, setResult] = useState<AIResult | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [yoloRunning, setYoloRunning] = useState(false);
+  const [yoloSteps, setYoloSteps] = useState<YoloStep[]>([]);
 
   function captureScreenshot() {
     const canvas = document.querySelector<HTMLCanvasElement>(".molecule-canvas canvas");
@@ -772,10 +788,72 @@ function AIAssistant() {
       });
   }
 
-  function applyAICommands() {
+  async function applyAICommands() {
     if (!result || result.resolvedCommands.length === 0) return;
-    void applyCommands(result.resolvedCommands);
+    await applyCommands(result.resolvedCommands);
     setResult(null);
+  }
+
+  async function runYoloMode() {
+    if (!state || loading || yoloRunning || !request.trim()) return;
+    setError("");
+    setResult(null);
+    setLoading(true);
+    setYoloRunning(true);
+
+    const plan = buildYoloPlan(request);
+    setYoloSteps(plan);
+
+    const history: string[] = [];
+    try {
+      for (const step of plan) {
+        const liveState = useAppStore.getState().state;
+        if (!liveState) throw new Error("Editor state is not available.");
+
+        const beforeScreenshot = captureScreenshot();
+        const prompt = buildYoloStepPrompt(request, step, plan, history);
+        setYoloSteps((current) =>
+          updateYoloStep(current, step.id, { status: "running", prompt, beforeScreenshot }),
+        );
+
+        const proposal = await invoke<AIResult>("propose_commands_via_ai_tauri", {
+          input: prompt,
+          state: liveState,
+          screenshot: beforeScreenshot,
+        });
+
+        if (proposal.resolvedCommands.length > 0) {
+          await applyCommands(proposal.resolvedCommands);
+          await waitForMoleculeRender();
+        }
+
+        const afterScreenshot = captureScreenshot();
+        const status: YoloStepStatus = proposal.resolvedCommands.length > 0 ? "applied" : "skipped";
+        history.push(
+          `Step ${step.id} (${step.goal}) ${status}: ${proposal.explanation}. Commands: ${JSON.stringify(
+            proposal.commands,
+          )}`,
+        );
+        setYoloSteps((current) =>
+          updateYoloStep(current, step.id, {
+            status,
+            afterScreenshot,
+            commands: proposal.commands,
+            explanation: proposal.explanation,
+          }),
+        );
+      }
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : typeof caught === "string" ? caught : "YOLO mode failed.";
+      setError(message);
+      setYoloSteps((current) => {
+        const running = current.find((step) => step.status === "running");
+        return running ? updateYoloStep(current, running.id, { status: "failed", error: message }) : current;
+      });
+    } finally {
+      setLoading(false);
+      setYoloRunning(false);
+    }
   }
 
   return (
@@ -794,9 +872,12 @@ function AIAssistant() {
       />
       <div className="assistant-actions">
         <button type="button" onClick={generateCommands} disabled={loading || !request.trim()}>
-          {loading ? "Generating..." : "Generate Commands"}
+          {loading && !yoloRunning ? "Generating..." : "Generate Commands"}
         </button>
-        <button type="button" disabled={loading || !result || result.resolvedCommands.length === 0} onClick={applyAICommands}>
+        <button type="button" onClick={runYoloMode} disabled={loading || yoloRunning || !request.trim()}>
+          {yoloRunning ? "YOLO Running..." : "YOLO"}
+        </button>
+        <button type="button" disabled={loading || !result || result.resolvedCommands.length === 0} onClick={() => void applyAICommands()}>
           Apply Commands
         </button>
       </div>
@@ -808,9 +889,92 @@ function AIAssistant() {
           <pre>{JSON.stringify({ commands: result.commands, explanation: result.explanation }, null, 2)}</pre>
         </div>
       ) : null}
+      {yoloSteps.length > 0 ? <YoloRunLog steps={yoloSteps} /> : null}
       {error ? <p className="inline-error">{error}</p> : null}
     </section>
   );
+}
+
+function YoloRunLog({ steps }: { steps: YoloStep[] }) {
+  return (
+    <div className="yolo-run-log" aria-label="YOLO mode run log">
+      <div className="tool-section-heading">
+        <h3>YOLO Plan</h3>
+        <span>{steps.filter((step) => step.status === "applied" || step.status === "skipped").length}/{steps.length}</span>
+      </div>
+      <ol>
+        {steps.map((step) => (
+          <li key={step.id} className={`yolo-step yolo-step-${step.status}`}>
+            <div className="yolo-step-head">
+              <strong>{step.goal}</strong>
+              <span>{step.status}</span>
+            </div>
+            {step.explanation ? <p>{step.explanation}</p> : null}
+            {step.error ? <p className="inline-error">{step.error}</p> : null}
+            {step.prompt ? (
+              <details>
+                <summary>Input sent after current screenshot</summary>
+                <pre>{step.prompt}</pre>
+              </details>
+            ) : null}
+            <div className="yolo-screenshots">
+              {step.beforeScreenshot ? <ScreenshotThumb label="Before" src={step.beforeScreenshot} /> : null}
+              {step.afterScreenshot ? <ScreenshotThumb label="After apply" src={step.afterScreenshot} /> : null}
+            </div>
+            {step.commands ? <pre>{JSON.stringify(step.commands, null, 2)}</pre> : null}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function ScreenshotThumb({ label, src }: { label: string; src: string }) {
+  return (
+    <figure>
+      <img src={src} alt={`${label} molecule screenshot`} />
+      <figcaption>{label}</figcaption>
+    </figure>
+  );
+}
+
+function buildYoloPlan(request: string): YoloStep[] {
+  const explicitTasks = request
+    .split(/[\n。.!?]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  const goals = explicitTasks.length > 1 ? explicitTasks : [request.trim(), "Verify the applied editor state and make one corrective command batch if needed"];
+
+  return goals.map((goal, index) => ({
+    id: index + 1,
+    goal,
+    status: "pending",
+  }));
+}
+
+function buildYoloStepPrompt(originalRequest: string, step: YoloStep, plan: YoloStep[], history: string[]) {
+  return [
+    "YOLO MODE: act as an agentic Gaussian input editor.",
+    "You are executing one subtask now. Use the provided screenshot plus current state, propose only the commands for this subtask, and keep the explanation concise.",
+    "If this subtask is already satisfied in the current state, return zero commands and explain that it is already satisfied.",
+    "Do not ask the user for confirmation in YOLO mode; choose the safest chemically reasonable command batch available.",
+    `Original request: ${originalRequest}`,
+    `Plan: ${plan.map((item) => `${item.id}. ${item.goal}`).join(" | ")}`,
+    `Current subtask ${step.id}/${plan.length}: ${step.goal}`,
+    history.length > 0 ? `Previous applied subtasks: ${history.join("\n")}` : "Previous applied subtasks: none",
+    "Return the normal raw JSON command response for this one subtask only.",
+  ].join("\n");
+}
+
+function updateYoloStep(steps: YoloStep[], id: number, patch: Partial<YoloStep>) {
+  return steps.map((step) => (step.id === id ? { ...step, ...patch } : step));
+}
+
+function waitForMoleculeRender() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
 }
 
 function formatMeasure(value: number | undefined) {

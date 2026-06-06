@@ -495,3 +495,108 @@ textarea {
     flex-direction: column;
   }
 }
+
+.yolo-run-log {
+  border-top: 1px solid #d4dae2;
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.yolo-run-log ol {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.yolo-step {
+  border: 1px solid #d4dae2;
+  border-left: 4px solid #a8b2bf;
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.yolo-step-running {
+  border-left-color: #516b8f;
+  background: #f7f9fb;
+}
+
+.yolo-step-applied {
+  border-left-color: #25633f;
+}
+
+.yolo-step-skipped {
+  border-left-color: #7b5600;
+}
+
+.yolo-step-failed {
+  border-left-color: #a33831;
+}
+
+.yolo-step-head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.yolo-step-head strong {
+  color: #263142;
+  font-size: 13px;
+}
+
+.yolo-step-head span {
+  background: #eef1f4;
+  border-radius: 999px;
+  color: #425062;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  text-transform: uppercase;
+}
+
+.yolo-step p,
+.yolo-step summary,
+.yolo-step figcaption {
+  color: #425062;
+  font-size: 12px;
+}
+
+.yolo-step details pre,
+.yolo-step > pre {
+  background: #f7f9fb;
+  border: 1px solid #d4dae2;
+  border-radius: 6px;
+  color: #263142;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 6px 0 0;
+  max-height: 170px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
+.yolo-screenshots {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.yolo-screenshots figure {
+  margin: 0;
+}
+
+.yolo-screenshots img {
+  background: #f8fafc;
+  border: 1px solid #d4dae2;
+  border-radius: 6px;
+  display: block;
+  width: 100%;
+}

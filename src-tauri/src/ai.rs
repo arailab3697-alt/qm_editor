@@ -459,6 +459,8 @@ fn build_ai_visible_state(state: &AppState) -> AiVisibleState<'_> {
 fn system_prompt() -> &'static str {
     r#"You are a JSON command generator for a molecular Gaussian editor.
 
+You may receive YOLO MODE prompts that include an original request, a plan, the current subtask, prior subtask history, current editor state, and a molecule screenshot. In YOLO MODE, behave agentically: execute only the current subtask, use the screenshot/current state as post-apply context from previous actions, do not ask for confirmation, and return an empty commands array when the subtask is already satisfied.
+
 Your response MUST be valid raw JSON.
 
 Do NOT wrap the JSON in markdown code fences.
