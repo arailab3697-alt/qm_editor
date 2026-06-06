@@ -14,7 +14,8 @@ pub mod validation;
 use ai_commands::{build_ai_context, resolve_atom_references};
 use domain::{
     AiContext, AiProposal, AppState, ChemicalSpec, Command, FragmentDefinition, Molecule,
-    SubstituteByFragmentCompletion, ValidationMessage,
+    SubstituteByFragmentCompletion, ValidationMessage, YoloPlanStep, YoloStepHistoryEntry,
+    YoloStepProposal,
 };
 use fragments::list_available_fragments;
 use functional_groups::{
@@ -115,6 +116,34 @@ async fn propose_commands_via_ai_tauri(
     })
 }
 
+#[tauri::command]
+fn plan_yolo_steps_tauri(input: String) -> Vec<YoloPlanStep> {
+    ai::build_yolo_plan(&input)
+}
+
+#[tauri::command]
+async fn propose_yolo_step_tauri(
+    input: String,
+    state: AppState,
+    screenshot: Option<String>,
+    plan: Vec<YoloPlanStep>,
+    step: YoloPlanStep,
+    history: Vec<YoloStepHistoryEntry>,
+) -> Result<YoloStepProposal, String> {
+    let context = build_ai_context(&state);
+    let (prompt, result) = ai::propose_yolo_step_commands(
+        &input, &state, &context, screenshot, &plan, &step, &history,
+    )
+    .await?;
+    let resolved_commands = resolve_atom_references(result.commands.clone(), &context)?;
+    Ok(YoloStepProposal {
+        prompt,
+        commands: result.commands,
+        resolved_commands,
+        explanation: result.explanation,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -133,7 +162,9 @@ pub fn run() {
             render_gaussian_tauri,
             validate_chemical_spec_tauri,
             build_ai_context_tauri,
-            propose_commands_via_ai_tauri
+            propose_commands_via_ai_tauri,
+            plan_yolo_steps_tauri,
+            propose_yolo_step_tauri
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
