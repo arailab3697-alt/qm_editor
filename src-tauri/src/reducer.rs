@@ -1012,6 +1012,50 @@ mod tests {
         assert!((measured - 120.0).abs() < 1e-9);
     }
 
+
+    fn build_four_atom_chain() -> Molecule {
+        Molecule {
+            name: "chain".to_string(),
+            atoms: vec![
+                Atom { id: 1, element: Element::C, isotope: None, nuclear_spin: None, position: [0.0, 0.0, 0.0] },
+                Atom { id: 2, element: Element::C, isotope: None, nuclear_spin: None, position: [1.0, 0.0, 0.0] },
+                Atom { id: 3, element: Element::C, isotope: None, nuclear_spin: None, position: [2.0, 1.0, 0.0] },
+                Atom { id: 4, element: Element::C, isotope: None, nuclear_spin: None, position: [3.0, 1.0, 1.0] },
+            ],
+            bonds: vec![
+                Bond { id: 1, atom_ids: [1, 2], order: 1 },
+                Bond { id: 2, atom_ids: [2, 3], order: 1 },
+                Bond { id: 3, atom_ids: [3, 4], order: 1 },
+            ],
+        }
+    }
+
+
+    #[test]
+    fn dihedral_angle_command_updates_coordinates() {
+        let state = reduce(
+            initial_app_state(),
+            Command::SetMolecule { molecule: build_four_atom_chain() },
+        );
+
+        let state = reduce(
+            state,
+            Command::SetDihedralAngle {
+                atom_ids: [1, 2, 3, 4],
+                angle: 60.0,
+                mode: GeometryEditMode::AtomOnly,
+            },
+        );
+
+        let a = atom_position_for(&state, 1);
+        let b = atom_position_for(&state, 2);
+        let c = atom_position_for(&state, 3);
+        let d = atom_position_for(&state, 4);
+        let measured = dihedral_degrees(a, b, c, d).expect("dihedral should be measurable");
+
+        assert!((measured - 60.0).abs() < 1e-7);
+    }
+
     #[test]
     fn add_atom_preserves_isotope_and_nuclear_spin() {
         let state = reduce(
